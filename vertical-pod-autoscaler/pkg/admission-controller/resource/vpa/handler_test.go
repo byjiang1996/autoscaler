@@ -52,7 +52,7 @@ func TestValidateVPA(t *testing.T) {
 			name:        "empty create",
 			vpa:         vpa_types.VerticalPodAutoscaler{},
 			isCreate:    true,
-			expectError: fmt.Errorf("TargetRef is required. If you're using v1beta1 version of the API, please migrate to v1"),
+			expectError: fmt.Errorf("Either TargetRef or Selector is required."),
 		},
 		{
 			name: "no update mode",

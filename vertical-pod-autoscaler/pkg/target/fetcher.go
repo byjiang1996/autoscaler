@@ -118,8 +118,17 @@ type vpaTargetSelectorFetcher struct {
 }
 
 func (f *vpaTargetSelectorFetcher) Fetch(vpa *vpa_types.VerticalPodAutoscaler) (labels.Selector, error) {
+	if vpa.Spec.Selector != nil {
+		selector, err := metav1.LabelSelectorAsSelector(vpa.Spec.Selector)
+
+		if err != nil {
+			return nil, err
+		}
+		return selector, nil
+	}
+
 	if vpa.Spec.TargetRef == nil {
-		return nil, fmt.Errorf("targetRef not defined. If this is a v1beta1 object switch to v1beta2.")
+		return nil, fmt.Errorf("Neither selector or targetRef is defined.")
 	}
 	kind := wellKnownController(vpa.Spec.TargetRef.Kind)
 	informer, exists := f.informersMap[kind]

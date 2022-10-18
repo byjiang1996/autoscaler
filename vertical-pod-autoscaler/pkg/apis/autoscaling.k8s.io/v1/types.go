@@ -59,6 +59,9 @@ type VerticalPodAutoscaler struct {
 
 // VerticalPodAutoscalerSpec is the specification of the behavior of the autoscaler.
 type VerticalPodAutoscalerSpec struct {
+	// A label query that determines the set of pods controlled by the Autoscaler.
+	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors
+	Selector *metav1.LabelSelector `json:"selector" protobuf:"bytes,1,name=selector"`
 
 	// TargetRef points to the controller managing the set of pods for the
 	// autoscaler to control - e.g. Deployment, StatefulSet. VerticalPodAutoscaler
