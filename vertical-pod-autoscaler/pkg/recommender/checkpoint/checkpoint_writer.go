@@ -18,6 +18,7 @@ package checkpoint
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"sort"
 	"time"
@@ -29,6 +30,10 @@ import (
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	api_util "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 	"k8s.io/klog"
+)
+
+var (
+	maxCheckpointOverwriteTime = flag.Duration("max-checkpoint-overwrite-time", 10*time.Minute, `Max allowed time to overwrite checkpoint with no change`)
 )
 
 // CheckpointWriter persistently stores aggregated historical usage of containers
@@ -97,23 +102,28 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 				klog.Errorf("Cannot serialize checkpoint for vpa %v container %v. Reason: %+v", vpa.ID.VpaName, container, err)
 				continue
 			}
-			checkpointName := fmt.Sprintf("%s-%s", vpa.ID.VpaName, container)
-			vpaCheckpoint := vpa_types.VerticalPodAutoscalerCheckpoint{
-				ObjectMeta: metav1.ObjectMeta{Name: checkpointName},
-				Spec: vpa_types.VerticalPodAutoscalerCheckpointSpec{
-					ContainerName: container,
-					VPAObjectName: vpa.ID.VpaName,
-				},
-				Status: *containerCheckpoint,
-			}
-			err = api_util.CreateOrUpdateVpaCheckpoint(writer.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(vpa.ID.Namespace), &vpaCheckpoint)
-			if err != nil {
-				klog.Errorf("Cannot save VPA %s/%s checkpoint for %s. Reason: %+v",
-					vpa.ID.Namespace, vpaCheckpoint.Spec.VPAObjectName, vpaCheckpoint.Spec.ContainerName, err)
-			} else {
-				klog.V(3).Infof("Saved VPA %s/%s checkpoint for %s",
-					vpa.ID.Namespace, vpaCheckpoint.Spec.VPAObjectName, vpaCheckpoint.Spec.ContainerName)
-				vpa.CheckpointWritten = now
+			// Check if VPA checkpoint object is written before last sample time + *maxCheckpointOverwriteTime
+			// It is possible that LastSampleStart obtained from current iteration is already less than now.
+			// Apply *maxCheckpointOverwriteTime for safety check
+			if containerCheckpoint.LastSampleStart.Add(*maxCheckpointOverwriteTime).After(vpa.CheckpointWritten) {
+				checkpointName := fmt.Sprintf("%s-%s", vpa.ID.VpaName, container)
+				vpaCheckpoint := vpa_types.VerticalPodAutoscalerCheckpoint{
+					ObjectMeta: metav1.ObjectMeta{Name: checkpointName},
+					Spec: vpa_types.VerticalPodAutoscalerCheckpointSpec{
+						ContainerName: container,
+						VPAObjectName: vpa.ID.VpaName,
+					},
+					Status: *containerCheckpoint,
+				}
+				err = api_util.CreateOrUpdateVpaCheckpoint(writer.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(vpa.ID.Namespace), &vpaCheckpoint)
+				if err != nil {
+					klog.Errorf("Cannot save VPA %s/%s checkpoint for %s. Reason: %+v",
+						vpa.ID.Namespace, vpaCheckpoint.Spec.VPAObjectName, vpaCheckpoint.Spec.ContainerName, err)
+				} else {
+					klog.V(3).Infof("Saved VPA %s/%s checkpoint for %s",
+						vpa.ID.Namespace, vpaCheckpoint.Spec.VPAObjectName, vpaCheckpoint.Spec.ContainerName)
+					vpa.CheckpointWritten = now
+				}
 			}
 			minCheckpoints--
 		}
