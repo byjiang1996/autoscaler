@@ -1,0 +1,16 @@
+apiVersion: "autoscaling.k8s.io/v1beta2"
+kind: VerticalPodAutoscaler
+metadata:
+  name: sample-mufn-vpa2
+spec:
+  selector:
+    matchLabels:
+      mufnapp: mufn-cont2rol-plane-service-bijiang
+  resourcePolicy:
+    containerPolicies:
+      - containerName: mufn-control-plane-service
+        maxAllowed:
+          cpu: 3
+          memory: 8Gi
+  updatePolicy:
+    updateMode: "Off"

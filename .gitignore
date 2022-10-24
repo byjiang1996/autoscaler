@@ -15,6 +15,7 @@
 
 # VSCode project files
 **/.vscode
+.metals
 
 # Emacs save files
 *~

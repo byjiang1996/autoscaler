@@ -215,6 +215,7 @@ func (a *AggregateContainerState) addCPUSample(sample *ContainerUsageSampleWithK
 	// Samples are added with the weight equal to the current request. This means that
 	// whenever the request is increased, the history accumulated so far effectively decays,
 	// which helps react quickly to CPU starvation.
+	// Non 1.0 sample weight may affect our window'd decay policy.
 	a.AggregateCPUUsage.AddSample(
 		fmt.Sprintf("%#v", sample.Container), cpuUsageCores, math.Max(cpuRequestCores, minSampleWeight), sample.MeasureStart)
 }

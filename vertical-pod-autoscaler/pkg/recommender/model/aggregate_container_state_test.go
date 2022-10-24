@@ -17,6 +17,7 @@ limitations under the License.
 package model
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -65,8 +66,10 @@ func addTestMemorySample(cluster *ClusterState, container ContainerID, memoryByt
 }
 
 // Creates two pods, each having two containers:
-//   testPodID1: { 'app-A', 'app-B' }
-//   testPodID2: { 'app-A', 'app-C' }
+//
+//	testPodID1: { 'app-A', 'app-B' }
+//	testPodID2: { 'app-A', 'app-C' }
+//
 // Adds a few usage samples to the containers.
 // Verifies that AggregateStateByContainerName() properly aggregates
 // container CPU and memory peak histograms, grouping the two containers
@@ -179,14 +182,19 @@ func TestAggregateContainerStateLoadFromCheckpoint(t *testing.T) {
 		},
 		CPUHistogram: vpa_types.HistogramCheckpoint{
 			BucketWeights: map[int]float64{
-				0: 10,
+				0:  10000,
+				35: 121,
+				36: 8858,
 			},
-			TotalWeight: 44.0,
+			TotalWeight: 267.79657484165193,
 		},
 	}
 
 	cs := NewAggregateContainerState()
 	err := cs.LoadFromCheckpoint(&checkpoint)
+
+	fmt.Printf("Pod not present in the ClusterState: %v", cs.AggregateCPUUsage)
+
 	assert.NoError(t, err)
 
 	assert.Equal(t, t1, cs.FirstSampleStart)

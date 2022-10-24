@@ -223,10 +223,16 @@ func (p *prometheusHistoryProvider) readResourceHistory(res map[model.PodID]*Pod
 }
 
 func (p *prometheusHistoryProvider) readLastLabels(res map[model.PodID]*PodHistory, query string) error {
+	end := time.Now()
+	start := end.Add(-time.Duration(p.historyDuration))
 	ctx, cancel := context.WithTimeout(context.Background(), p.queryTimeout)
 	defer cancel()
 
-	result, _, err := p.prometheusClient.Query(ctx, query, time.Now())
+	result, _, err := p.prometheusClient.QueryRange(ctx, query, prometheusv1.Range{
+		Start: start,
+		End:   end,
+		Step:  time.Duration(p.historyResolution),
+	})
 	if err != nil {
 		return fmt.Errorf("cannot get timeseries for labels: %v", err)
 	}
@@ -289,6 +295,9 @@ func (p *prometheusHistoryProvider) GetClusterHistory() (map[model.PodID]*PodHis
 			sort.Slice(samples, func(i, j int) bool { return samples[i].MeasureStart.Before(samples[j].MeasureStart) })
 		}
 	}
-	p.readLastLabels(res, p.config.PodLabelsMetricName)
+	err = p.readLastLabels(res, p.config.PodLabelsMetricName)
+	if err != nil {
+		klog.Warningf("Failed when read last labels: %v", err)
+	}
 	return res, nil
 }

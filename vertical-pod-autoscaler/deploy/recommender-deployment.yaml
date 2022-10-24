@@ -26,7 +26,7 @@ spec:
         runAsUser: 65534 # nobody
       containers:
       - name: recommender
-        image: container-image-registry.corp.linkedin.com:8083/lps-image/linkedin/bijiang-go-cli/azkaban-vpa-recommender:0.0.9
+        image: container-image-registry.corp.linkedin.com:8083/temp/cortado/vpa-recommender-amd64:dev
         imagePullPolicy: Always
         args:
         - --v=4
@@ -63,14 +63,15 @@ spec:
         - --recommendation-margin-fraction=0
         - --recommendation-use-confidence-multiplier=false
 
-        # decay_half = 24h, max_decay_exponent=7 and built-in 1e-4 epsilon forces 14d windowed recommendation
-        - --memory-histogram-decay-half-life=24h
-        - --cpu-histogram-decay-half-life=24h
+        # decay_half = 60h, max_decay_exponent=7 and built-in 1e-4 epsilon forces 30d windowed recommendation
+        - --memory-histogram-decay-half-life=60h
+        - --cpu-histogram-decay-half-life=60h
         - --max-decay-exponent=7
 
-        # each mem peak usage is aggregated per hour. gc vpa object if inactive for more than 365d (365=8760/24)
+        # each mem peak usage is aggregated per hour. gc vpa object if inactive for more than 90d (90=2160/24)
         - --memory-aggregation-interval=1h
-        - --memory-aggregation-interval-count=8760
+        - --memory-aggregation-interval-count=2160
+        - --recommendation-missing-max-duration=2160h
 
         # bump up mem for 2 times if OOM'd
         - --oom-bump-up-ratio=2

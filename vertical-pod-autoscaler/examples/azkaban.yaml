@@ -1,0 +1,85 @@
+apiVersion: "autoscaling.k8s.io/v1beta2"
+kind: VerticalPodAutoscaler
+metadata:
+  name: sample-azkaban-vpa
+spec:
+  selector:
+    matchLabels:
+      fqdn: holdem5-bijiang-sparkflow
+  resourcePolicy:
+    containerPolicies:
+      - containerName: az-platform-image
+        minAllowed:
+          cpu: 100m
+          memory: 50Mi
+        maxAllowed:
+          cpu: 1
+          memory: 500Mi
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+    name: fc-dep-holdem5-123456
+    labels:
+      fqdn: holdem5-bijiang-sparkflow
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+  initContainers:
+    - name: initcontainer
+      image: k8s.gcr.io/ubuntu-slim:0.1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 50Mi
+      command: ["/bin/sh"]
+      args:
+        - "-c"
+        - "echo 1233 >/dev/null"
+  containers:
+    - name: az-platform-image
+      image: k8s.gcr.io/ubuntu-slim:0.1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 50Mi
+      command: ["/bin/sh"]
+      args:
+        - "-c"
+        - "while true; do timeout 0.5s yes >/dev/null; sleep 0.5s; done"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fc-dep-holdem5-345678
+  labels:
+    fqdn: holdem5-bijiang-sparkflow
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+  initContainers:
+    - name: initcontainer
+      image: k8s.gcr.io/ubuntu-slim:0.1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 50Mi
+      command: ["/bin/sh"]
+      args:
+        - "-c"
+        - "echo 1233 >/dev/null"
+  containers:
+    - name: az-platform-image
+      image: k8s.gcr.io/ubuntu-slim:0.1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 50Mi
+      command: ["/bin/sh"]
+      args:
+        - "-c"
+        - "while true; do timeout 0.5s yes >/dev/null; sleep 0.5s; done"

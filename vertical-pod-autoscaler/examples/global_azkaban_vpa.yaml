@@ -1,0 +1,16 @@
+apiVersion: "autoscaling.k8s.io/v1beta2"
+kind: VerticalPodAutoscaler
+metadata:
+  name: global-azkaban-vpa
+spec:
+  selector:
+    matchLabels:
+      app: azkaban-exec-server
+  resourcePolicy:
+    containerPolicies:
+      - containerName: az-platform-image
+        maxAllowed:
+          cpu: 8
+          memory: 64Gi
+  updatePolicy:
+    updateMode: "Off"

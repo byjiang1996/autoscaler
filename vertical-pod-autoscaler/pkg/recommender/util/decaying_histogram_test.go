@@ -63,6 +63,22 @@ func TestLongtermDecay(t *testing.T) {
 	assert.InEpsilon(t, 2, h.Percentile(1.0), valueEpsilon)
 }
 
+// Verify that the decaying histogram behaves correctly mirrors windowed operations.
+// func TestLongtermDecayForAzkaban(t *testing.T) {
+// 	AzTestHistogramOptions, _ := NewLinearHistogramOptions(10.0, 1.0, 0.1)
+// 	h := NewDecayingHistogram(AzTestHistogramOptions, 24*time.Hour)
+// 	// Add a sample with a very large weight.
+// 	h.AddSample(4, 1, startTime)
+// 	// Add another sample later, such that the first sample will be completely removed
+// 	// due to decay and epsilon.
+// 	h.AddSample(3, 1, startTime.Add(time.Hour*24*10))
+// 	h.AddSample(2, 1, startTime.Add(time.Hour*24*16))
+// 	h.AddSample(1, 1, startTime.Add(time.Hour*24*25))
+
+// 	assert.InEpsilon(t, 2, h.Percentile(0), valueEpsilon)
+// 	assert.InEpsilon(t, 2, h.Percentile(1.0), valueEpsilon)
+// }
+
 // Verify specific values of percentiles on an example decaying histogram with
 // 4 samples added with different timestamps.
 func TestDecayingHistogramPercentiles(t *testing.T) {
