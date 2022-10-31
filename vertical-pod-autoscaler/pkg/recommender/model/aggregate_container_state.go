@@ -184,7 +184,7 @@ func (a *AggregateContainerState) AddSample(sample *ContainerUsageSample) {
 	case ResourceCPU:
 		a.addCPUSample(sample)
 	case ResourceMemory:
-		a.AggregateMemoryPeaks.AddSample(BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
+		a.addMemorySample(sample)
 	default:
 		panic(fmt.Sprintf("AddSample doesn't support resource '%s'", sample.Resource))
 	}
@@ -219,6 +219,23 @@ func (a *AggregateContainerState) addCPUSample(sample *ContainerUsageSample) {
 		a.FirstSampleStart = sample.MeasureStart
 	}
 	a.TotalSamplesCount++
+}
+
+func (a *AggregateContainerState) addMemorySample(sample *ContainerUsageSample) {
+	a.AggregateMemoryPeaks.AddSample(BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
+	// In case of OOM handling, total samples count and sample start will be always zero
+	// However, it does have valid memory samples
+	// Risk:
+	// 1. Last and first sample start time are inaccurate if the first sample is OOM sample
+	if a.LastSampleStart.IsZero() {
+		a.LastSampleStart = time.Now()
+	}
+	if a.FirstSampleStart.IsZero() {
+		a.FirstSampleStart = time.Now()
+	}
+	if a.TotalSamplesCount == 0 {
+		a.TotalSamplesCount = 1
+	}
 }
 
 // SaveToCheckpoint serializes AggregateContainerState as VerticalPodAutoscalerCheckpointStatus.

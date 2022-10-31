@@ -89,6 +89,8 @@ type PodState struct {
 	Containers map[string]*ContainerState
 	// PodPhase describing current life cycle phase of the Pod.
 	Phase apiv1.PodPhase
+	// Delete twice to record OOM for Azkaban's case
+	Deleted bool
 }
 
 // NewClusterState returns a new ClusterState with no pods.
@@ -294,6 +296,7 @@ func newPod(id PodID) *PodState {
 	return &PodState{
 		ID:         id,
 		Containers: make(map[string]*ContainerState),
+		Deleted:    false,
 	}
 }
 

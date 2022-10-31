@@ -17,11 +17,9 @@ limitations under the License.
 package oom
 
 import (
-	"strings"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/client-go/tools/cache"
 
@@ -38,7 +36,8 @@ type OomInfo struct {
 // Observer can observe pod resource update and collect OOM events.
 type Observer interface {
 	GetObservedOomsChannel() chan OomInfo
-	OnEvent(*apiv1.Event)
+	// OnEvent(*apiv1.Event)
+	OnEvent(*apiv1.Pod)
 	cache.ResourceEventHandler
 }
 
@@ -58,57 +57,104 @@ func (o *observer) GetObservedOomsChannel() chan OomInfo {
 	return o.observedOomsChannel
 }
 
-func parseEvictionEvent(event *apiv1.Event) []OomInfo {
-	if event.Reason != "Evicted" ||
-		event.InvolvedObject.Kind != "Pod" {
-		return []OomInfo{}
-	}
-	extractArray := func(annotationsKey string) []string {
-		str, found := event.Annotations[annotationsKey]
-		if !found {
-			return []string{}
+// func parseEvictionEvent(event *apiv1.Event) []OomInfo {
+// 	if event.Reason != "Evicted" ||
+// 		event.InvolvedObject.Kind != "Pod" {
+// 		return []OomInfo{}
+// 	}
+// 	extractArray := func(annotationsKey string) []string {
+// 		str, found := event.Annotations[annotationsKey]
+// 		if !found {
+// 			return []string{}
+// 		}
+// 		return strings.Split(str, ",")
+// 	}
+// 	offendingContainers := extractArray("offending_containers")
+// 	offendingContainersUsage := extractArray("offending_containers_usage")
+// 	starvedResource := extractArray("starved_resource")
+// 	if len(offendingContainers) != len(offendingContainersUsage) ||
+// 		len(offendingContainers) != len(starvedResource) {
+// 		return []OomInfo{}
+// 	}
+
+// 	result := make([]OomInfo, 0, len(offendingContainers))
+
+// 	for i, container := range offendingContainers {
+// 		if starvedResource[i] != "memory" {
+// 			continue
+// 		}
+// 		memory, err := resource.ParseQuantity(offendingContainersUsage[i])
+// 		if err != nil {
+// 			klog.Errorf("Cannot parse resource quantity in eviction event %v. Error: %v", offendingContainersUsage[i], err)
+// 			continue
+// 		}
+// 		oomInfo := OomInfo{
+// 			Timestamp: event.CreationTimestamp.Time.UTC(),
+// 			Memory:    model.ResourceAmount(memory.Value()),
+// 			ContainerID: model.ContainerID{
+// 				PodID: model.PodID{
+// 					Namespace: event.InvolvedObject.Namespace,
+// 					PodName:   event.InvolvedObject.Name,
+// 				},
+// 				ContainerName: container,
+// 			},
+// 		}
+// 		result = append(result, oomInfo)
+// 	}
+// 	return result
+// }
+
+// OnEvent inspects k8s eviction events and translates them to OomInfo.
+// func (o *observer) OnEvent(event *apiv1.Event) {
+// 	klog.V(1).Infof("OOM Observer processing event: %+v", event)
+// 	for _, oomInfo := range parseEvictionEvent(event) {
+// 		o.observedOomsChannel <- oomInfo
+// 	}
+// }
+
+func parseEvictionPod(pod *apiv1.Pod) []OomInfo {
+	defer func() {
+		if err := recover(); err != nil {
+			klog.Warningf("Cannot infer the eviction oomInfo from %v. Error: %v", pod, err)
 		}
-		return strings.Split(str, ",")
-	}
-	offendingContainers := extractArray("offending_containers")
-	offendingContainersUsage := extractArray("offending_containers_usage")
-	starvedResource := extractArray("starved_resource")
-	if len(offendingContainers) != len(offendingContainersUsage) ||
-		len(offendingContainers) != len(starvedResource) {
+	}()
+
+	if pod.Status.Phase != "Failed" || pod.Status.ContainerStatuses == nil {
 		return []OomInfo{}
 	}
 
-	result := make([]OomInfo, 0, len(offendingContainers))
+	// In most cases, only one container will OOMKilled
+	// If not, append() will help allocate a larger array
+	result := make([]OomInfo, 0, 1)
 
-	for i, container := range offendingContainers {
-		if starvedResource[i] != "memory" {
+	for _, containerStatus := range pod.Status.ContainerStatuses {
+		if containerStatus.State.Terminated != nil && containerStatus.State.Terminated.Reason != "OOMKilled" {
 			continue
 		}
-		memory, err := resource.ParseQuantity(offendingContainersUsage[i])
-		if err != nil {
-			klog.Errorf("Cannot parse resource quantity in eviction event %v. Error: %v", offendingContainersUsage[i], err)
-			continue
-		}
-		oomInfo := OomInfo{
-			Timestamp: event.CreationTimestamp.Time.UTC(),
-			Memory:    model.ResourceAmount(memory.Value()),
-			ContainerID: model.ContainerID{
-				PodID: model.PodID{
-					Namespace: event.InvolvedObject.Namespace,
-					PodName:   event.InvolvedObject.Name,
+		spec := findSpec(containerStatus.Name, pod.Spec.Containers)
+		if spec != nil {
+			memory := spec.Resources.Requests.Memory()
+			oomInfo := OomInfo{
+				Timestamp: containerStatus.State.Terminated.FinishedAt.Time.UTC(),
+				Memory:    model.ResourceAmount(memory.Value()),
+				ContainerID: model.ContainerID{
+					PodID: model.PodID{
+						Namespace: pod.ObjectMeta.Namespace,
+						PodName:   pod.ObjectMeta.Name,
+					},
+					ContainerName: containerStatus.Name,
 				},
-				ContainerName: container,
-			},
+			}
+			result = append(result, oomInfo)
 		}
-		result = append(result, oomInfo)
 	}
 	return result
 }
 
-// OnEvent inspects k8s eviction events and translates them to OomInfo.
-func (o *observer) OnEvent(event *apiv1.Event) {
-	klog.V(1).Infof("OOM Observer processing event: %+v", event)
-	for _, oomInfo := range parseEvictionEvent(event) {
+// OnEvent inspects k8s eviction pods and translates them to OomInfo.
+func (o *observer) OnEvent(pod *apiv1.Pod) {
+	klog.V(1).Infof("OOM Observer processing pod: %+v", pod)
+	for _, oomInfo := range parseEvictionPod(pod) {
 		o.observedOomsChannel <- oomInfo
 	}
 }

@@ -139,31 +139,73 @@ func newMetricsClient(config *rest.Config, namespace string) metrics.MetricsClie
 }
 
 // WatchEvictionEventsWithRetries watches new Events with reason=Evicted and passes them to the observer.
-func WatchEvictionEventsWithRetries(kubeClient kube_client.Interface, observer oom.Observer, namespace string) {
+// func WatchEvictionEventsWithRetries(kubeClient kube_client.Interface, observer oom.Observer, namespace string) {
+// 	go func() {
+// 		options := metav1.ListOptions{
+// 			FieldSelector: "reason=Evicted",
+// 		}
+
+// 		watchEvictionEventsOnce := func() {
+// 			watchInterface, err := kubeClient.CoreV1().Events(namespace).Watch(context.TODO(), options)
+// 			if err != nil {
+// 				klog.Errorf("Cannot initialize watching events. Reason %v", err)
+// 				return
+// 			}
+// 			watchEvictionEvents(watchInterface.ResultChan(), observer)
+// 		}
+// 		for {
+// 			watchEvictionEventsOnce()
+// 			// Wait between attempts, retrying too often breaks API server.
+// 			waitTime := wait.Jitter(evictionWatchRetryWait, evictionWatchJitterFactor)
+// 			klog.V(1).Infof("An attempt to watch eviction events finished. Waiting %v before the next one.", waitTime)
+// 			time.Sleep(waitTime)
+// 		}
+// 	}()
+// }
+
+// func watchEvictionEvents(evictedEventChan <-chan watch.Event, observer oom.Observer) {
+// 	for {
+// 		evictedEvent, ok := <-evictedEventChan
+// 		if !ok {
+// 			klog.V(3).Infof("Eviction event chan closed")
+// 			return
+// 		}
+// 		if evictedEvent.Type == watch.Added {
+// 			evictedEvent, ok := evictedEvent.Object.(*apiv1.Event)
+// 			if !ok {
+// 				continue
+// 			}
+// 			observer.OnEvent(evictedEvent)
+// 		}
+// 	}
+// }
+
+// WatchEvictionPodsWithRetries watches new Pods with status.phase=Failed and passes them to the observer.
+func WatchEvictionPodsWithRetries(kubeClient kube_client.Interface, observer oom.Observer, namespace string) {
 	go func() {
 		options := metav1.ListOptions{
-			FieldSelector: "reason=Evicted",
+			FieldSelector: "status.phase=Failed",
 		}
 
-		watchEvictionEventsOnce := func() {
-			watchInterface, err := kubeClient.CoreV1().Events(namespace).Watch(context.TODO(), options)
+		watchEvictionPodsOnce := func() {
+			watchInterface, err := kubeClient.CoreV1().Pods(namespace).Watch(context.TODO(), options)
 			if err != nil {
 				klog.Errorf("Cannot initialize watching events. Reason %v", err)
 				return
 			}
-			watchEvictionEvents(watchInterface.ResultChan(), observer)
+			watchEvictionPods(watchInterface.ResultChan(), observer)
 		}
 		for {
-			watchEvictionEventsOnce()
+			watchEvictionPodsOnce()
 			// Wait between attempts, retrying too often breaks API server.
 			waitTime := wait.Jitter(evictionWatchRetryWait, evictionWatchJitterFactor)
-			klog.V(1).Infof("An attempt to watch eviction events finished. Waiting %v before the next one.", waitTime)
+			klog.V(1).Infof("An attempt to watch eviction pods finished. Waiting %v before the next one.", waitTime)
 			time.Sleep(waitTime)
 		}
 	}()
 }
 
-func watchEvictionEvents(evictedEventChan <-chan watch.Event, observer oom.Observer) {
+func watchEvictionPods(evictedEventChan <-chan watch.Event, observer oom.Observer) {
 	for {
 		evictedEvent, ok := <-evictedEventChan
 		if !ok {
@@ -171,7 +213,7 @@ func watchEvictionEvents(evictedEventChan <-chan watch.Event, observer oom.Obser
 			return
 		}
 		if evictedEvent.Type == watch.Added {
-			evictedEvent, ok := evictedEvent.Object.(*apiv1.Event)
+			evictedEvent, ok := evictedEvent.Object.(*apiv1.Pod)
 			if !ok {
 				continue
 			}
@@ -208,7 +250,7 @@ func newPodClients(kubeClient kube_client.Interface, resourceEventHandler cache.
 func NewPodListerAndOOMObserver(kubeClient kube_client.Interface, namespace string) (v1lister.PodLister, oom.Observer) {
 	oomObserver := oom.NewObserver()
 	podLister := newPodClients(kubeClient, oomObserver, namespace)
-	WatchEvictionEventsWithRetries(kubeClient, oomObserver, namespace)
+	WatchEvictionPodsWithRetries(kubeClient, oomObserver, namespace)
 	return podLister, oomObserver
 }
 
@@ -380,10 +422,14 @@ func (feeder *clusterStateFeeder) LoadPods() {
 	for _, spec := range podSpecs {
 		pods[spec.ID] = spec
 	}
-	for key := range feeder.clusterState.Pods {
+	for key, pod := range feeder.clusterState.Pods {
 		if _, exists := pods[key]; !exists {
-			klog.V(3).Infof("Deleting Pod %v", key)
-			feeder.clusterState.DeletePod(key)
+			if pod.Deleted {
+				klog.V(3).Infof("Deleting Pod %v", key)
+				feeder.clusterState.DeletePod(key)
+			} else {
+				pod.Deleted = true
+			}
 		}
 	}
 	for _, pod := range pods {
