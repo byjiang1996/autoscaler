@@ -17,6 +17,7 @@ limitations under the License.
 package model
 
 import (
+	"flag"
 	"fmt"
 	"time"
 
@@ -27,9 +28,8 @@ import (
 	"k8s.io/klog"
 )
 
-const (
-	// RecommendationMissingMaxDuration is maximum time that we accept the recommendation can be missing.
-	RecommendationMissingMaxDuration = 30 * time.Minute
+var (
+	RecommendationMissingMaxDuration = flag.Duration("recommendation-missing-max-duration", 30*time.Minute, `maximum time that we accept the recommendation can be missing.`)
 )
 
 // ClusterState holds all runtime information about the cluster required for the
@@ -398,7 +398,7 @@ func (cluster *ClusterState) RecordRecommendation(vpa *Vpa, now time.Time) error
 	if !ok {
 		cluster.EmptyVPAs[vpa.ID] = now
 	} else {
-		if lastLogged.Add(RecommendationMissingMaxDuration).Before(now) {
+		if lastLogged.Add(*RecommendationMissingMaxDuration).Before(now) {
 			cluster.EmptyVPAs[vpa.ID] = now
 			return fmt.Errorf("VPA %v/%v is missing recommendation for more than %v", vpa.ID.Namespace, vpa.ID.VpaName, RecommendationMissingMaxDuration)
 		}

@@ -17,6 +17,7 @@ limitations under the License.
 package model
 
 import (
+	"flag"
 	"fmt"
 	"time"
 
@@ -26,10 +27,14 @@ import (
 )
 
 const (
-	// OOMBumpUpRatio specifies how much memory will be added after observing OOM.
-	OOMBumpUpRatio float64 = 1.2
-	// OOMMinBumpUp specifies minimal increase of memory after observing OOM.
-	OOMMinBumpUp float64 = 100 * 1024 * 1024 // 100MB
+	DefaultOOMBumpUpRatio float64 = 1.2
+	DefaultOOMMinBumpUp   float64 = 100 * 1024 * 1024 // 100MB
+)
+
+// Aggregation configuration flags
+var (
+	OOMBumpUpRatio = flag.Float64("oom-bump-up-ratio", DefaultOOMBumpUpRatio, `OOMBumpUpRatio specifies how much memory will be added after observing OOM.`)
+	OOMMinBumpUp   = flag.Float64("oom-min-bump-up", DefaultOOMMinBumpUp, `OOMMinBumpUp specifies minimal increase of memory after observing OOM.`)
 )
 
 // ContainerUsageSample is a measure of resource usage of a container over some
@@ -49,7 +54,8 @@ type ContainerUsageSample struct {
 // Each ContainerState has a pointer to the aggregation that is used for
 // aggregating its usage samples.
 // It holds the recent history of CPU and memory utilization.
-//   Note: samples are added to intervals based on their start timestamps.
+//
+//	Note: samples are added to intervals based on their start timestamps.
 type ContainerState struct {
 	// Current request.
 	Request Resources
@@ -198,8 +204,8 @@ func (container *ContainerState) RecordOOM(timestamp time.Time, requestedMemory 
 	// Get max of the request and the recent usage-based memory peak.
 	// Omitting oomPeak here to protect against recommendation running too high on subsequent OOMs.
 	memoryUsed := ResourceAmountMax(requestedMemory, container.memoryPeak)
-	memoryNeeded := ResourceAmountMax(memoryUsed+MemoryAmountFromBytes(OOMMinBumpUp),
-		ScaleResource(memoryUsed, OOMBumpUpRatio))
+	memoryNeeded := ResourceAmountMax(memoryUsed+MemoryAmountFromBytes(*OOMMinBumpUp),
+		ScaleResource(memoryUsed, *OOMBumpUpRatio))
 
 	oomMemorySample := ContainerUsageSample{
 		MeasureStart: timestamp,

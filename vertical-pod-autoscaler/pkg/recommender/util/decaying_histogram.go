@@ -17,6 +17,7 @@ limitations under the License.
 package util
 
 import (
+	"flag"
 	"fmt"
 	"math"
 	"time"
@@ -25,10 +26,10 @@ import (
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 )
 
+const DefaultMaxDecayExponent = 100
+
 var (
-	// When the decay factor exceeds 2^maxDecayExponent the histogram is
-	// renormalized by shifting the decay start time forward.
-	maxDecayExponent = 100
+	maxDecayExponent = flag.Int64("max-decay-exponent", DefaultMaxDecayExponent, `When the decay factor exceeds 2^maxDecayExponent the histogram is renormalized by shifting the decay start time forward.`)
 )
 
 // A histogram that gives newer samples a higher weight than the old samples,
@@ -108,7 +109,7 @@ func (h *decayingHistogram) shiftReferenceTimestamp(newreferenceTimestamp time.T
 func (h *decayingHistogram) decayFactor(timestamp time.Time) float64 {
 	// Max timestamp before the exponent grows too large.
 	maxAllowedTimestamp := h.referenceTimestamp.Add(
-		time.Duration(int64(h.halfLife) * int64(maxDecayExponent)))
+		time.Duration(int64(h.halfLife) * int64(*maxDecayExponent)))
 	if timestamp.After(maxAllowedTimestamp) {
 		// The exponent has grown too large. Renormalize the histogram by
 		// shifting the referenceTimestamp to the current timestamp and rescaling
