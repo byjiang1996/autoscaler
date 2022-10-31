@@ -3,13 +3,13 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: vpa-recommender
-  namespace: kube-system
+  namespace: cop-dev
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: vpa-recommender
-  namespace: kube-system
+  namespace: cop-dev
 spec:
   replicas: 1
   selector:
@@ -26,14 +26,61 @@ spec:
         runAsUser: 65534 # nobody
       containers:
       - name: recommender
-        image: k8s.gcr.io/autoscaling/vpa-recommender:0.8.1
+        image: container-image-registry.corp.linkedin.com:8083/lps-image/linkedin/bijiang-go-cli/azkaban-vpa-recommender:0.0.9
         imagePullPolicy: Always
+        args:
+        - --v=4
+
+        # prometheus configurations
+        # - --storage=prometheus
+        # - --prometheus-address=https://k8s-prometheus.stg.linkedin.com/ei-ltx1-k8s-0
+        # - --history-length=14d
+        # - --history-resolution=10m
+        # - --prometheus-query-timeout=10m
+        # - --container-pod-name-label=pod
+        # - --container-name-label=container
+        # - --metric-for-pod-labels=kube_pod_labels
+        # - --pod-label-prefix=label_
+        # - --pod-namespace-label=namespace
+        # - --pod-name-label=pod
+
+        # Linkedin k8s metrics API data is refreshed every 30s; set checkpoint write timeout to be 30s as well.
+        - --recommender-interval=30s
+        - --checkpoints-timeout=30s
+        - --vpa-object-namespace=cop-dev
+
+        # 90% target CPU percentile and 100% target memory percentile
+        # set lowerbound, target and upperbound the same for less k8s vpa object updates
+        # let Azkaban to decide safety recommendation margin
+        # no confidence multiplier for less k8s vpa object updates:
+        # lower bound and upper bound will not change over time if original values stay the same
+        - --recommendation-lower-bound-cpu-percentile=0.9
+        - --recommendation-target-cpu-percentile=0.9
+        - --recommendation-upper-bound-cpu-percentile=0.9
+        - --recommendation-lower-bound-memory-peak-percentile=1.0
+        - --recommendation-target-memory-peak-percentile=1.0
+        - --recommendation-upper-bound-memory-peak-percentile=1.0
+        - --recommendation-margin-fraction=0
+        - --recommendation-use-confidence-multiplier=false
+
+        # decay_half = 24h, max_decay_exponent=7 and built-in 1e-4 epsilon forces 14d windowed recommendation
+        - --memory-histogram-decay-half-life=24h
+        - --cpu-histogram-decay-half-life=24h
+        - --max-decay-exponent=7
+
+        # each mem peak usage is aggregated per hour. gc vpa object if inactive for more than 365d (365=8760/24)
+        - --memory-aggregation-interval=1h
+        - --memory-aggregation-interval-count=8760
+
+        # bump up mem for 2 times if OOM'd
+        - --oom-bump-up-ratio=2
+        - --oom-min-bump-up=0
         resources:
           limits:
-            cpu: 200m
-            memory: 1000Mi
+            cpu: 4
+            memory: 10Gi
           requests:
-            cpu: 50m
-            memory: 500Mi
+            cpu: 4
+            memory: 10Gi
         ports:
         - containerPort: 8080
