@@ -67,11 +67,11 @@ var (
 // aggregate container usage samples.
 type ContainerStateAggregator interface {
 	// AddSample aggregates a single usage sample.
-	AddSample(sample *ContainerUsageSample)
+	AddSample(sample *ContainerUsageSampleWithKey)
 	// SubtractSample removes a single usage sample. The subtracted sample
 	// should be equal to some sample that was aggregated with AddSample()
 	// in the past.
-	SubtractSample(sample *ContainerUsageSample)
+	SubtractSample(sample *ContainerUsageSampleWithKey)
 	// GetLastRecommendation returns last recommendation calculated for this
 	// aggregator.
 	GetLastRecommendation() corev1.ResourceList
@@ -179,7 +179,7 @@ func NewAggregateContainerState() *AggregateContainerState {
 }
 
 // AddSample aggregates a single usage sample.
-func (a *AggregateContainerState) AddSample(sample *ContainerUsageSample) {
+func (a *AggregateContainerState) AddSample(sample *ContainerUsageSampleWithKey) {
 	switch sample.Resource {
 	case ResourceCPU:
 		a.addCPUSample(sample)
@@ -195,7 +195,7 @@ func (a *AggregateContainerState) AddSample(sample *ContainerUsageSample) {
 // AddSample() in the past.
 // Only memory samples can be subtracted at the moment. Support for CPU could be
 // added if necessary.
-func (a *AggregateContainerState) SubtractSample(sample *ContainerUsageSample) {
+func (a *AggregateContainerState) SubtractSample(sample *ContainerUsageSampleWithKey) {
 	switch sample.Resource {
 	case ResourceMemory:
 		a.AggregateMemoryPeaks.SubtractSample(BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
@@ -204,7 +204,7 @@ func (a *AggregateContainerState) SubtractSample(sample *ContainerUsageSample) {
 	}
 }
 
-func (a *AggregateContainerState) addCPUSample(sample *ContainerUsageSample) {
+func (a *AggregateContainerState) addCPUSample(sample *ContainerUsageSampleWithKey) {
 	cpuUsageCores := CoresFromCPUAmount(sample.Usage)
 	cpuRequestCores := CoresFromCPUAmount(sample.Request)
 	// Samples are added with the weight equal to the current request. This means that
@@ -221,7 +221,7 @@ func (a *AggregateContainerState) addCPUSample(sample *ContainerUsageSample) {
 	a.TotalSamplesCount++
 }
 
-func (a *AggregateContainerState) addMemorySample(sample *ContainerUsageSample) {
+func (a *AggregateContainerState) addMemorySample(sample *ContainerUsageSampleWithKey) {
 	a.AggregateMemoryPeaks.AddSample(BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
 	// In case of OOM handling, total samples count and sample start will be always zero
 	// However, it does have valid memory samples
@@ -337,13 +337,13 @@ func NewContainerStateAggregatorProxy(cluster *ClusterState, containerID Contain
 }
 
 // AddSample adds a container sample to the aggregator.
-func (p *ContainerStateAggregatorProxy) AddSample(sample *ContainerUsageSample) {
+func (p *ContainerStateAggregatorProxy) AddSample(sample *ContainerUsageSampleWithKey) {
 	aggregator := p.cluster.findOrCreateAggregateContainerState(p.containerID)
 	aggregator.AddSample(sample)
 }
 
 // SubtractSample subtracts a container sample from the aggregator.
-func (p *ContainerStateAggregatorProxy) SubtractSample(sample *ContainerUsageSample) {
+func (p *ContainerStateAggregatorProxy) SubtractSample(sample *ContainerUsageSampleWithKey) {
 	aggregator := p.cluster.findOrCreateAggregateContainerState(p.containerID)
 	aggregator.SubtractSample(sample)
 }

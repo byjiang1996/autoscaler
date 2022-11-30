@@ -88,7 +88,7 @@ func (sample *ContainerUsageSample) isValid(expectedResource ResourceName) bool 
 	return sample.Usage >= 0 && sample.Resource == expectedResource
 }
 
-func (container *ContainerState) addCPUSample(sample *ContainerUsageSample) bool {
+func (container *ContainerState) addCPUSample(sample *ContainerUsageSampleWithKey) bool {
 	// Order should not matter for the histogram, other than deduplication.
 	if !sample.isValid(ResourceCPU) || !sample.MeasureStart.After(container.LastCPUSampleStart) {
 		return false // Discard invalid, duplicate or out-of-order samples.
@@ -138,7 +138,7 @@ func (container *ContainerState) GetMaxMemoryPeak() ResourceAmount {
 	return ResourceAmountMax(container.memoryPeak, container.oomPeak)
 }
 
-func (container *ContainerState) addMemorySample(sample *ContainerUsageSample, isOOM bool) bool {
+func (container *ContainerState) addMemorySample(sample *ContainerUsageSampleWithKey, isOOM bool) bool {
 	ts := sample.MeasureStart
 	// We always process OOM samples.
 	if !sample.isValid(ResourceMemory) ||
@@ -159,11 +159,14 @@ func (container *ContainerState) addMemorySample(sample *ContainerUsageSample, i
 		oldMaxMem := container.GetMaxMemoryPeak()
 		if oldMaxMem != 0 && sample.Usage > oldMaxMem {
 			// Remove the old peak.
-			oldPeak := ContainerUsageSample{
-				MeasureStart: container.WindowEnd,
-				Usage:        oldMaxMem,
-				Request:      sample.Request,
-				Resource:     ResourceMemory,
+			oldPeak := ContainerUsageSampleWithKey{
+				ContainerUsageSample: ContainerUsageSample{
+					MeasureStart: container.WindowEnd,
+					Usage:        oldMaxMem,
+					Request:      sample.Request,
+					Resource:     ResourceMemory,
+				},
+				Container: sample.Container,
 			}
 			container.aggregator.SubtractSample(&oldPeak)
 			addNewPeak = true
@@ -179,11 +182,14 @@ func (container *ContainerState) addMemorySample(sample *ContainerUsageSample, i
 	}
 	container.observeQualityMetrics(sample.Usage, isOOM, corev1.ResourceMemory)
 	if addNewPeak {
-		newPeak := ContainerUsageSample{
-			MeasureStart: container.WindowEnd,
-			Usage:        sample.Usage,
-			Request:      sample.Request,
-			Resource:     ResourceMemory,
+		newPeak := ContainerUsageSampleWithKey{
+			ContainerUsageSample: ContainerUsageSample{
+				MeasureStart: container.WindowEnd,
+				Usage:        sample.Usage,
+				Request:      sample.Request,
+				Resource:     ResourceMemory,
+			},
+			Container: sample.Container,
 		}
 		container.aggregator.AddSample(&newPeak)
 		if isOOM {
@@ -196,7 +202,7 @@ func (container *ContainerState) addMemorySample(sample *ContainerUsageSample, i
 }
 
 // RecordOOM adds info regarding OOM event in the model as an artificial memory sample.
-func (container *ContainerState) RecordOOM(timestamp time.Time, requestedMemory ResourceAmount) error {
+func (container *ContainerState) RecordOOM(timestamp time.Time, containerID ContainerID, requestedMemory ResourceAmount) error {
 	// Discard old OOM
 	if timestamp.Before(container.WindowEnd.Add(-1 * GetAggregationsConfig().MemoryAggregationInterval)) {
 		return fmt.Errorf("OOM event will be discarded - it is too old (%v)", timestamp)
@@ -207,10 +213,13 @@ func (container *ContainerState) RecordOOM(timestamp time.Time, requestedMemory 
 	memoryNeeded := ResourceAmountMax(memoryUsed+MemoryAmountFromBytes(*OOMMinBumpUp),
 		ScaleResource(memoryUsed, *OOMBumpUpRatio))
 
-	oomMemorySample := ContainerUsageSample{
-		MeasureStart: timestamp,
-		Usage:        memoryNeeded,
-		Resource:     ResourceMemory,
+	oomMemorySample := ContainerUsageSampleWithKey{
+		ContainerUsageSample: ContainerUsageSample{
+			MeasureStart: timestamp,
+			Usage:        memoryNeeded,
+			Resource:     ResourceMemory,
+		},
+		Container: containerID,
 	}
 	if !container.addMemorySample(&oomMemorySample, true) {
 		return fmt.Errorf("adding OOM sample failed")
@@ -225,7 +234,7 @@ func (container *ContainerState) RecordOOM(timestamp time.Time, requestedMemory 
 // was discarded.
 // Note: usage samples don't hold their end timestamp / duration. They are
 // implicitly assumed to be disjoint when aggregating.
-func (container *ContainerState) AddSample(sample *ContainerUsageSample) bool {
+func (container *ContainerState) AddSample(sample *ContainerUsageSampleWithKey) bool {
 	switch sample.Resource {
 	case ResourceCPU:
 		return container.addCPUSample(sample)
