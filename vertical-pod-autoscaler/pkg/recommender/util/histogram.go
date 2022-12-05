@@ -40,11 +40,11 @@ type Histogram interface {
 	Percentile(percentile float64) float64
 
 	// Add a sample with a given value and weight.
-	AddSample(value float64, weight float64, time time.Time)
+	AddSample(containerId string, value float64, weight float64, time time.Time)
 
 	// Remove a sample with a given value and weight. Note that the total
 	// weight of samples with a given value cannot be negative.
-	SubtractSample(value float64, weight float64, time time.Time)
+	SubtractSample(containerId string, value float64, weight float64, time time.Time)
 
 	// Add all samples from another histogram. Requires the histograms to be
 	// of the exact same type.
@@ -103,7 +103,7 @@ type histogram struct {
 	maxBucket int
 }
 
-func (h *histogram) AddSample(value float64, weight float64, time time.Time) {
+func (h *histogram) AddSample(containerId string, value float64, weight float64, time time.Time) {
 	if weight < 0.0 {
 		panic("sample weight must be non-negative")
 	}
@@ -126,7 +126,7 @@ func safeSubtract(value, sub, epsilon float64) float64 {
 	return value
 }
 
-func (h *histogram) SubtractSample(value float64, weight float64, time time.Time) {
+func (h *histogram) SubtractSample(containerId string, value float64, weight float64, time time.Time) {
 	if weight < 0.0 {
 		panic("sample weight must be non-negative")
 	}

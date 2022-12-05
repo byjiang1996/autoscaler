@@ -36,6 +36,7 @@ limitations under the License.
 package model
 
 import (
+	"flag"
 	"fmt"
 	"math"
 	"time"
@@ -61,6 +62,7 @@ const (
 var (
 	// DefaultControlledResources is a default value of Spec.ResourcePolicy.ContainerPolicies[].ControlledResources.
 	DefaultControlledResources = []ResourceName{ResourceCPU, ResourceMemory}
+	MinAllowedContainerCnt     = flag.Int("min-allowed-container-count-for-recommendation", 10, `minimum allowed container count to use for recommendation`)
 )
 
 // ContainerStateAggregator is an interface for objects that consume and
@@ -172,8 +174,8 @@ func (a *AggregateContainerState) MergeContainerState(other *AggregateContainerS
 func NewAggregateContainerState() *AggregateContainerState {
 	config := GetAggregationsConfig()
 	return &AggregateContainerState{
-		AggregateCPUUsage:    util.NewDecayingHistogram(config.CPUHistogramOptions, config.CPUHistogramDecayHalfLife),
-		AggregateMemoryPeaks: util.NewDecayingHistogram(config.MemoryHistogramOptions, config.MemoryHistogramDecayHalfLife),
+		AggregateCPUUsage:    util.NewAtleastxcontainerDecayingHistogram(*MinAllowedContainerCnt, config.CPUHistogramOptions, config.CPUHistogramDecayHalfLife),
+		AggregateMemoryPeaks: util.NewAtleastxcontainerDecayingHistogram(*MinAllowedContainerCnt, config.MemoryHistogramOptions, config.MemoryHistogramDecayHalfLife),
 		CreationTime:         time.Now(),
 	}
 }
@@ -198,7 +200,7 @@ func (a *AggregateContainerState) AddSample(sample *ContainerUsageSampleWithKey)
 func (a *AggregateContainerState) SubtractSample(sample *ContainerUsageSampleWithKey) {
 	switch sample.Resource {
 	case ResourceMemory:
-		a.AggregateMemoryPeaks.SubtractSample(BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
+		a.AggregateMemoryPeaks.SubtractSample(fmt.Sprintf("%#v", sample.Container), BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
 	default:
 		panic(fmt.Sprintf("SubtractSample doesn't support resource '%s'", sample.Resource))
 	}
@@ -211,7 +213,7 @@ func (a *AggregateContainerState) addCPUSample(sample *ContainerUsageSampleWithK
 	// whenever the request is increased, the history accumulated so far effectively decays,
 	// which helps react quickly to CPU starvation.
 	a.AggregateCPUUsage.AddSample(
-		cpuUsageCores, math.Max(cpuRequestCores, minSampleWeight), sample.MeasureStart)
+		fmt.Sprintf("%#v", sample.Container), cpuUsageCores, math.Max(cpuRequestCores, minSampleWeight), sample.MeasureStart)
 	if sample.MeasureStart.After(a.LastSampleStart) {
 		a.LastSampleStart = sample.MeasureStart
 	}
@@ -222,7 +224,7 @@ func (a *AggregateContainerState) addCPUSample(sample *ContainerUsageSampleWithK
 }
 
 func (a *AggregateContainerState) addMemorySample(sample *ContainerUsageSampleWithKey) {
-	a.AggregateMemoryPeaks.AddSample(BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
+	a.AggregateMemoryPeaks.AddSample(fmt.Sprintf("%#v", sample.Container), BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
 	// In case of OOM handling, total samples count and sample start will be always zero
 	// However, it does have valid memory samples
 	// Risk:

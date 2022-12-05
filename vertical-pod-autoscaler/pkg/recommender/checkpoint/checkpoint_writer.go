@@ -145,7 +145,11 @@ func buildAggregateContainerStateMap(vpa *model.Vpa, cluster *model.ClusterState
 			aggregateKey := cluster.MakeAggregateStateKey(pod, containerName)
 			if vpa.UsesAggregation(aggregateKey) {
 				if aggregateContainerState, exists := aggregateContainerStateMap[containerName]; exists {
-					subtractCurrentContainerMemoryPeak(aggregateContainerState, container, now)
+					containerID := model.ContainerID{
+						PodID:         pod.ID,
+						ContainerName: containerName,
+					}
+					subtractCurrentContainerMemoryPeak(&containerID, aggregateContainerState, container, now)
 				}
 			}
 		}
@@ -153,8 +157,8 @@ func buildAggregateContainerStateMap(vpa *model.Vpa, cluster *model.ClusterState
 	return aggregateContainerStateMap
 }
 
-func subtractCurrentContainerMemoryPeak(a *model.AggregateContainerState, container *model.ContainerState, now time.Time) {
+func subtractCurrentContainerMemoryPeak(containerID *model.ContainerID, a *model.AggregateContainerState, container *model.ContainerState, now time.Time) {
 	if now.Before(container.WindowEnd) {
-		a.AggregateMemoryPeaks.SubtractSample(model.BytesFromMemoryAmount(container.GetMaxMemoryPeak()), 1.0, container.WindowEnd)
+		a.AggregateMemoryPeaks.SubtractSample(fmt.Sprintf("%#v", containerID), model.BytesFromMemoryAmount(container.GetMaxMemoryPeak()), 1.0, container.WindowEnd)
 	}
 }

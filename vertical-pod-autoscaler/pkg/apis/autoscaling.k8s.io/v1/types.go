@@ -18,6 +18,8 @@ limitations under the License.
 package v1
 
 import (
+	"time"
+
 	autoscaling "k8s.io/api/autoscaling/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -360,4 +362,9 @@ type HistogramCheckpoint struct {
 
 	// Sum of samples to be used as denominator for weights from BucketWeights.
 	TotalWeight float64 `json:"totalWeight,omitempty" protobuf:"bytes,3,opt,name=totalWeight"`
+
+	// Please refer to atleastxcontainer_decaying_histogram.go for more info
+	IsNewHistogram               bool                 `json:"isNewHistogram,omitempty" protobuf:"bytes,4,opt,name=isNewHistogram"`
+	ContainerIdToLatestTimestamp map[string]time.Time `json:"containerIdToLatestTimestamp,omitempty" protobuf:"bytes,5,opt,name=containerIdToLatestTimestamp"`
+	ContainerIdToMaxValue        map[string]float64   `json:"containerIdToMaxValue,omitempty" protobuf:"bytes,6,opt,name=containerIdToMaxValue"`
 }
