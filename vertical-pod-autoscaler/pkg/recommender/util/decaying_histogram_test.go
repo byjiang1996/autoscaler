@@ -153,7 +153,7 @@ func TestDecayingHistogramLoadFromCheckpoint(t *testing.T) {
 
 	checkpoint := vpa_types.HistogramCheckpoint{
 		TotalWeight: 6.0,
-		BucketWeights: map[int]uint32{
+		BucketWeights: map[int]float64{
 			0: 1,
 		},
 		ReferenceTimestamp: metav1.NewTime(timestamp),

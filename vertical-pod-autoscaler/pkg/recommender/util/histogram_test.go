@@ -150,7 +150,7 @@ func TestHistogramSaveToCheckpoint(t *testing.T) {
 	assert.Equal(t, 1., s.TotalWeight)
 	assert.Len(t, s.BucketWeights, 1)
 	assert.Contains(t, s.BucketWeights, bucket)
-	assert.Equal(t, MaxCheckpointWeight, s.BucketWeights[bucket])
+	assert.Equal(t, 1., s.BucketWeights[bucket])
 }
 
 func TestHistogramSaveToCheckpointDropsRelativelySmallValues(t *testing.T) {
@@ -171,10 +171,11 @@ func TestHistogramSaveToCheckpointDropsRelativelySmallValues(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, 100001. /*w1+w2*/, s.TotalWeight)
-	// Bucket 1 shouldn't be there
-	assert.Len(t, s.BucketWeights, 1)
+	// Bucket 1 should be there
+	assert.Len(t, s.BucketWeights, 2)
 	assert.Contains(t, s.BucketWeights, bucket2)
-	assert.Equal(t, MaxCheckpointWeight, s.BucketWeights[bucket2])
+	assert.Equal(t, w1, s.BucketWeights[bucket1])
+	assert.Equal(t, w2, s.BucketWeights[bucket2])
 }
 
 func TestHistogramSaveToCheckpointForMultipleValues(t *testing.T) {
@@ -198,15 +199,15 @@ func TestHistogramSaveToCheckpointForMultipleValues(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 10051. /*w1 + w2 + w3*/, s.TotalWeight)
 	assert.Len(t, s.BucketWeights, 3)
-	assert.Equal(t, uint32(1), s.BucketWeights[bucket1])
-	assert.Equal(t, uint32(10000), s.BucketWeights[bucket2])
-	assert.Equal(t, uint32(50), s.BucketWeights[bucket3])
+	assert.Equal(t, float64(1), s.BucketWeights[bucket1])
+	assert.Equal(t, float64(10000), s.BucketWeights[bucket2])
+	assert.Equal(t, float64(50), s.BucketWeights[bucket3])
 }
 
 func TestHistogramLoadFromCheckpoint(t *testing.T) {
 	checkpoint := vpa_types.HistogramCheckpoint{
 		TotalWeight: 6.0,
-		BucketWeights: map[int]uint32{
+		BucketWeights: map[int]float64{
 			0: 1,
 			1: 2,
 		},
@@ -227,7 +228,7 @@ func TestHistogramLoadFromCheckpoint(t *testing.T) {
 func TestHistogramLoadFromCheckpointReturnsErrorOnNegativeBucket(t *testing.T) {
 	checkpoint := vpa_types.HistogramCheckpoint{
 		TotalWeight: 1.0,
-		BucketWeights: map[int]uint32{
+		BucketWeights: map[int]float64{
 			-1: 1,
 		},
 	}
@@ -239,7 +240,7 @@ func TestHistogramLoadFromCheckpointReturnsErrorOnNegativeBucket(t *testing.T) {
 func TestHistogramLoadFromCheckpointReturnsErrorOnInvalidBucket(t *testing.T) {
 	checkpoint := vpa_types.HistogramCheckpoint{
 		TotalWeight: 1.0,
-		BucketWeights: map[int]uint32{
+		BucketWeights: map[int]float64{
 			99: 1,
 		},
 	}
@@ -251,7 +252,7 @@ func TestHistogramLoadFromCheckpointReturnsErrorOnInvalidBucket(t *testing.T) {
 func TestHistogramLoadFromCheckpointReturnsErrorNegativeTotaWeight(t *testing.T) {
 	checkpoint := vpa_types.HistogramCheckpoint{
 		TotalWeight:   -1.0,
-		BucketWeights: map[int]uint32{},
+		BucketWeights: map[int]float64{},
 	}
 	h := NewHistogram(testHistogramOptions)
 	err := h.LoadFromCheckpoint(&checkpoint)

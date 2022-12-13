@@ -223,24 +223,11 @@ func (h *histogram) updateMinAndMaxBucket() {
 
 func (h *histogram) SaveToChekpoint() (*vpa_types.HistogramCheckpoint, error) {
 	result := vpa_types.HistogramCheckpoint{
-		BucketWeights: make(map[int]uint32),
+		BucketWeights: make(map[int]float64),
 	}
 	result.TotalWeight = h.totalWeight
-	// Find max
-	max := 0.
 	for bucket := h.minBucket; bucket <= h.maxBucket; bucket++ {
-		if h.bucketWeight[bucket] > max {
-			max = h.bucketWeight[bucket]
-		}
-	}
-	// Compute ratio
-	ratio := float64(MaxCheckpointWeight) / max
-	// Convert weights and drop near-zero weights
-	for bucket := h.minBucket; bucket <= h.maxBucket; bucket++ {
-		newWeight := uint32(round(h.bucketWeight[bucket] * ratio))
-		if newWeight > 0 {
-			result.BucketWeights[bucket] = newWeight
-		}
+		result.BucketWeights[bucket] = h.bucketWeight[bucket]
 	}
 
 	return &result, nil
@@ -253,9 +240,9 @@ func (h *histogram) LoadFromCheckpoint(checkpoint *vpa_types.HistogramCheckpoint
 	if checkpoint.TotalWeight < 0.0 {
 		return fmt.Errorf("Cannot load checkpoint with negative weight %v", checkpoint.TotalWeight)
 	}
-	sum := int64(0)
+	sum := float64(0.0)
 	for bucket, weight := range checkpoint.BucketWeights {
-		sum += int64(weight)
+		sum += weight
 		if bucket >= h.options.NumBuckets() {
 			return fmt.Errorf("Checkpoint has bucket %v that is exceeding histogram buckets %v", bucket, h.options.NumBuckets())
 		}
@@ -266,7 +253,7 @@ func (h *histogram) LoadFromCheckpoint(checkpoint *vpa_types.HistogramCheckpoint
 	if sum == 0 {
 		return nil
 	}
-	ratio := checkpoint.TotalWeight / float64(sum)
+	ratio := checkpoint.TotalWeight / sum
 	for bucket, weight := range checkpoint.BucketWeights {
 		if bucket < h.minBucket {
 			h.minBucket = bucket
@@ -274,7 +261,7 @@ func (h *histogram) LoadFromCheckpoint(checkpoint *vpa_types.HistogramCheckpoint
 		if bucket > h.maxBucket {
 			h.maxBucket = bucket
 		}
-		h.bucketWeight[bucket] += float64(weight) * ratio
+		h.bucketWeight[bucket] += weight * ratio
 	}
 	h.totalWeight += checkpoint.TotalWeight
 

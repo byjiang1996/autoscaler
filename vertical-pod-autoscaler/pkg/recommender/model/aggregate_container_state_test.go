@@ -172,13 +172,13 @@ func TestAggregateContainerStateLoadFromCheckpoint(t *testing.T) {
 		LastSampleStart:   metav1.NewTime(t2),
 		TotalSamplesCount: 20,
 		MemoryHistogram: vpa_types.HistogramCheckpoint{
-			BucketWeights: map[int]uint32{
+			BucketWeights: map[int]float64{
 				0: 10,
 			},
 			TotalWeight: 33.0,
 		},
 		CPUHistogram: vpa_types.HistogramCheckpoint{
-			BucketWeights: map[int]uint32{
+			BucketWeights: map[int]float64{
 				0: 10,
 			},
 			TotalWeight: 44.0,

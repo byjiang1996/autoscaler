@@ -81,7 +81,7 @@ func (in *HistogramCheckpoint) DeepCopyInto(out *HistogramCheckpoint) {
 	in.ReferenceTimestamp.DeepCopyInto(&out.ReferenceTimestamp)
 	if in.BucketWeights != nil {
 		in, out := &in.BucketWeights, &out.BucketWeights
-		*out = make(map[int]uint32, len(*in))
+		*out = make(map[int]float64, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}
