@@ -160,15 +160,24 @@ func (h *histogram) Percentile(percentile float64) float64 {
 	if h.IsEmpty() {
 		return 0.0
 	}
-	partialSum := 0.0
-	threshold := percentile * h.totalWeight
+	diff := percentile - 1.0
 	bucket := h.minBucket
-	for ; bucket < h.maxBucket; bucket++ {
-		partialSum += h.bucketWeight[bucket]
-		if partialSum >= threshold {
-			break
+	// Float64 inaccuracy for totalWeight would lead to severe inaccurate max percentile calculation
+	// Apply this if condition to fetch maxBucket directly if the percentile == 1.0
+	// TODO: recalibrate totalWeight and bucketWeight during Merge()
+	if diff > 1e-15 || diff < -1e-15 {
+		partialSum := 0.0
+		threshold := percentile * h.totalWeight
+		for ; bucket < h.maxBucket; bucket++ {
+			partialSum += h.bucketWeight[bucket]
+			if partialSum >= threshold {
+				break
+			}
 		}
+	} else {
+		bucket = h.maxBucket
 	}
+
 	if bucket < h.options.NumBuckets()-1 {
 		// Return the end of the bucket.
 		return h.options.GetBucketStart(bucket + 1)
