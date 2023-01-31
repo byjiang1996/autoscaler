@@ -10,10 +10,10 @@ import (
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 )
 
-// 1. If the histogram is new: never filled with minAllowedContainerCnt+ container metrics,
-//   we will always override percentile value as max allowed value
-// 2. Last x containers are allowed to override percentile value with their percentiled max usage values:
-//   in case if the percentile value driven by too few containers / samples can be inaccurate.
+//  1. If the histogram is new: never filled with minAllowedContainerCnt+ container metrics,
+//     we will always override percentile value as max allowed value
+//  2. Last x containers are allowed to override percentile value with their percentiled max usage values:
+//     in case if the percentile value driven by too few containers / samples can be inaccurate.
 type atleastxcontainerDecayingHistogram struct {
 	decayingHistogram
 	// whether the histogram has ever been filled with minAllowedContainerCnt+ container metrics
@@ -22,9 +22,10 @@ type atleastxcontainerDecayingHistogram struct {
 	containerIdToLatestTimestamp map[string]time.Time
 	containerIdToMaxValue        map[string]float64
 	minAllowedContainerCnt       int
+	enableForOldHistogram        bool
 }
 
-func NewAtleastxcontainerDecayingHistogram(minAllowedContainerCnt int, options HistogramOptions, halfLife time.Duration) Histogram {
+func NewAtleastxcontainerDecayingHistogram(minAllowedContainerCnt int, options HistogramOptions, halfLife time.Duration, enableForOldHistogram bool) Histogram {
 	return &atleastxcontainerDecayingHistogram{
 		decayingHistogram: decayingHistogram{
 			histogram:          *NewHistogram(options).(*histogram),
@@ -35,6 +36,7 @@ func NewAtleastxcontainerDecayingHistogram(minAllowedContainerCnt int, options H
 		containerIdToLatestTimestamp: make(map[string]time.Time),
 		containerIdToMaxValue:        make(map[string]float64),
 		minAllowedContainerCnt:       minAllowedContainerCnt,
+		enableForOldHistogram:        enableForOldHistogram,
 	}
 }
 
@@ -46,7 +48,10 @@ func (h *atleastxcontainerDecayingHistogram) Percentile(percentile float64) floa
 		return h.options.GetBucketStart(h.options.NumBuckets() - 1)
 	}
 
-	return math.Max(h.decayingHistogram.Percentile(percentile), h.percentileOverLastXContainers(percentile))
+	if h.enableForOldHistogram {
+		return math.Max(h.decayingHistogram.Percentile(percentile), h.percentileOverLastXContainers(percentile))
+	}
+	return h.decayingHistogram.Percentile(percentile)
 }
 
 func (h *atleastxcontainerDecayingHistogram) AddSample(containerId string, value float64, weight float64, time time.Time) {

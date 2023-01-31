@@ -174,8 +174,9 @@ func (a *AggregateContainerState) MergeContainerState(other *AggregateContainerS
 func NewAggregateContainerState() *AggregateContainerState {
 	config := GetAggregationsConfig()
 	return &AggregateContainerState{
-		AggregateCPUUsage:    util.NewAtleastxcontainerDecayingHistogram(*MinAllowedContainerCnt, config.CPUHistogramOptions, config.CPUHistogramDecayHalfLife),
-		AggregateMemoryPeaks: util.NewAtleastxcontainerDecayingHistogram(*MinAllowedContainerCnt, config.MemoryHistogramOptions, config.MemoryHistogramDecayHalfLife),
+		// For old histograms, we don't have to apply at least x container logic to CPU or memory which may potentially lead to incorrect recommendations
+		AggregateCPUUsage:    util.NewAtleastxcontainerDecayingHistogram(*MinAllowedContainerCnt, config.CPUHistogramOptions, config.CPUHistogramDecayHalfLife, false),
+		AggregateMemoryPeaks: util.NewAtleastxcontainerDecayingHistogram(*MinAllowedContainerCnt, config.MemoryHistogramOptions, config.MemoryHistogramDecayHalfLife, false),
 		CreationTime:         time.Now(),
 	}
 }
