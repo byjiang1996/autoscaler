@@ -61,8 +61,10 @@ const (
 
 var (
 	// DefaultControlledResources is a default value of Spec.ResourcePolicy.ContainerPolicies[].ControlledResources.
-	DefaultControlledResources = []ResourceName{ResourceCPU, ResourceMemory}
-	MinAllowedContainerCnt     = flag.Int("min-allowed-container-count-for-recommendation", 10, `minimum allowed container count to use for recommendation`)
+	DefaultControlledResources   = []ResourceName{ResourceCPU, ResourceMemory}
+	MinAllowedContainerCnt       = flag.Int("min-allowed-container-count-for-recommendation", 10, `minimum allowed container count to use for recommendation`)
+	DefaultMemoryForNewHistogram = flag.Float64("default-memory-for-new-histogram", 17179869184, `default memory limit for new histogram`) // 16Gi
+	DefaultCPUForNewHistogram    = flag.Float64("default-cpu-for-new-histogram", 2, `default cpu limit for new histogram`)                 // 2 CPU Cores
 )
 
 // ContainerStateAggregator is an interface for objects that consume and
@@ -175,8 +177,8 @@ func NewAggregateContainerState() *AggregateContainerState {
 	config := GetAggregationsConfig()
 	return &AggregateContainerState{
 		// For old histograms, we don't have to apply at least x container logic to CPU or memory which may potentially lead to incorrect recommendations
-		AggregateCPUUsage:    util.NewAtleastxcontainerDecayingHistogram(*MinAllowedContainerCnt, config.CPUHistogramOptions, config.CPUHistogramDecayHalfLife, false),
-		AggregateMemoryPeaks: util.NewAtleastxcontainerDecayingHistogram(*MinAllowedContainerCnt, config.MemoryHistogramOptions, config.MemoryHistogramDecayHalfLife, false),
+		AggregateCPUUsage:    util.NewAtleastxcontainerDecayingHistogram(*MinAllowedContainerCnt, config.CPUHistogramOptions, config.CPUHistogramDecayHalfLife, *DefaultCPUForNewHistogram),
+		AggregateMemoryPeaks: util.NewAtleastxcontainerDecayingHistogram(*MinAllowedContainerCnt, config.MemoryHistogramOptions, config.MemoryHistogramDecayHalfLife, *DefaultMemoryForNewHistogram),
 		CreationTime:         time.Now(),
 	}
 }

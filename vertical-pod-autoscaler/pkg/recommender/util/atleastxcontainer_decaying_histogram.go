@@ -22,10 +22,10 @@ type atleastxcontainerDecayingHistogram struct {
 	containerIdToLatestTimestamp map[string]time.Time
 	containerIdToMaxValue        map[string]float64
 	minAllowedContainerCnt       int
-	enableForOldHistogram        bool
+	resourceForNewHistogram      float64
 }
 
-func NewAtleastxcontainerDecayingHistogram(minAllowedContainerCnt int, options HistogramOptions, halfLife time.Duration, enableForOldHistogram bool) Histogram {
+func NewAtleastxcontainerDecayingHistogram(minAllowedContainerCnt int, options HistogramOptions, halfLife time.Duration, resourceForNewHistogram float64) Histogram {
 	return &atleastxcontainerDecayingHistogram{
 		decayingHistogram: decayingHistogram{
 			histogram:          *NewHistogram(options).(*histogram),
@@ -36,7 +36,7 @@ func NewAtleastxcontainerDecayingHistogram(minAllowedContainerCnt int, options H
 		containerIdToLatestTimestamp: make(map[string]time.Time),
 		containerIdToMaxValue:        make(map[string]float64),
 		minAllowedContainerCnt:       minAllowedContainerCnt,
-		enableForOldHistogram:        enableForOldHistogram,
+		resourceForNewHistogram:      resourceForNewHistogram,
 	}
 }
 
@@ -44,13 +44,12 @@ func (h *atleastxcontainerDecayingHistogram) Percentile(percentile float64) floa
 	h.updateAndShrinkMap()
 
 	if h.isNewHistogram {
-		// return the end of the bucket for new histograms.
-		return h.options.GetBucketStart(h.options.NumBuckets() - 1)
+		return h.resourceForNewHistogram
 	}
 
-	if h.enableForOldHistogram {
-		return math.Max(h.decayingHistogram.Percentile(percentile), h.percentileOverLastXContainers(percentile))
-	}
+	// if h.enableForOldHistogram {
+	// 	return math.Max(h.decayingHistogram.Percentile(percentile), h.percentileOverLastXContainers(percentile))
+	// }
 	return h.decayingHistogram.Percentile(percentile)
 }
 
