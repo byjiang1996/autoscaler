@@ -160,8 +160,10 @@ func (h *histogram) Percentile(percentile float64) float64 {
 	if h.IsEmpty() {
 		return 0.0
 	}
+
 	diff := percentile - 1.0
 	bucket := h.minBucket
+
 	// Float64 inaccuracy for totalWeight would lead to severe inaccurate max percentile calculation
 	// Apply this if condition to fetch maxBucket directly if the percentile == 1.0
 	// TODO: recalibrate totalWeight and bucketWeight during Merge()
@@ -234,6 +236,8 @@ func (h *histogram) SaveToChekpoint() (*vpa_types.HistogramCheckpoint, error) {
 	result := vpa_types.HistogramCheckpoint{
 		BucketWeights: make(map[int]float64),
 	}
+	// Should recheck min and max bucket before saving to checkpoint
+	h.updateMinAndMaxBucket()
 	result.TotalWeight = h.totalWeight
 	for bucket := h.minBucket; bucket <= h.maxBucket; bucket++ {
 		result.BucketWeights[bucket] = h.bucketWeight[bucket]
@@ -273,6 +277,9 @@ func (h *histogram) LoadFromCheckpoint(checkpoint *vpa_types.HistogramCheckpoint
 		h.bucketWeight[bucket] += weight * ratio
 	}
 	h.totalWeight += checkpoint.TotalWeight
+
+	// Should recheck min and max bucket after fully loading the checkpoint
+	h.updateMinAndMaxBucket()
 
 	return nil
 }
