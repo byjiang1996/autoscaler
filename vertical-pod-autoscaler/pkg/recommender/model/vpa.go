@@ -102,6 +102,8 @@ type Vpa struct {
 	UpdateMode *vpa_types.UpdateMode
 	// Created denotes timestamp of the original VPA object creation
 	Created time.Time
+	// LastSampleStart denotes timestamp of the last sample time for the VPA object
+	LastSampleStart time.Time
 	// CheckpointWritten indicates when last checkpoint for the VPA object was stored.
 	CheckpointWritten time.Time
 	// IsV1Beta1API is set to true if VPA object has labelSelector defined as in v1beta1 api.
@@ -121,6 +123,7 @@ func NewVpa(id VpaID, selector labels.Selector, created time.Time) *Vpa {
 		aggregateContainerStates:        make(aggregateContainerStatesMap),
 		ContainersInitialAggregateState: make(ContainerNameToAggregateStateMap),
 		Created:                         created,
+		LastSampleStart:                 created,
 		Annotations:                     make(vpaAnnotationsMap),
 		Conditions:                      make(vpaConditionsMap),
 		IsV1Beta1API:                    false,
@@ -191,7 +194,16 @@ func (vpa *Vpa) MergeCheckpointedState(aggregateContainerStateMap ContainerNameT
 func (vpa *Vpa) AggregateStateByContainerName() ContainerNameToAggregateStateMap {
 	containerNameToAggregateStateMap := AggregateStateByContainerName(vpa.aggregateContainerStates)
 	vpa.MergeCheckpointedState(containerNameToAggregateStateMap)
+	vpa.updateLastSampleStart(containerNameToAggregateStateMap)
 	return containerNameToAggregateStateMap
+}
+
+func (vpa *Vpa) updateLastSampleStart(containerNameToAggregateStateMap ContainerNameToAggregateStateMap) {
+	for _, aggregatedContainerState := range containerNameToAggregateStateMap {
+		if aggregatedContainerState.LastSampleStart.After(vpa.LastSampleStart) {
+			vpa.LastSampleStart = aggregatedContainerState.LastSampleStart
+		}
+	}
 }
 
 // HasRecommendation returns if the VPA object contains any recommendation

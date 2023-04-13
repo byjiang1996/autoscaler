@@ -33,17 +33,89 @@ var (
 	anyTime = time.Unix(0, 0)
 )
 
-func TestMergeAggregateContainerState(t *testing.T) {
+func TestMergeAggregateContainerStateAndUpdateLastSampleStart(t *testing.T) {
 
 	containersInitialAggregateState := ContainerNameToAggregateStateMap{}
 	containersInitialAggregateState["test"] = NewAggregateContainerState()
+	containersInitialAggregateState["test"].addCPUSample(&ContainerUsageSampleWithKey{
+		Container: ContainerID{PodID: PodID{}, ContainerName: "test"},
+		ContainerUsageSample: ContainerUsageSample{
+			MeasureStart: testTimestamp.Add(time.Hour * -24),
+			Usage:        CPUAmountFromCores(1),
+			Request:      testRequest[ResourceCPU],
+			Resource:     ResourceCPU,
+		},
+	})
+	containersInitialAggregateState["test"].addMemorySample(&ContainerUsageSampleWithKey{
+		Container: ContainerID{PodID: PodID{}, ContainerName: "test"},
+		ContainerUsageSample: ContainerUsageSample{
+			MeasureStart: testTimestamp.Add(time.Hour * -24),
+			Usage:        MemoryAmountFromBytes(6e9),
+			Request:      testRequest[ResourceMemory],
+			Resource:     ResourceMemory,
+		},
+	})
 	vpa := NewVpa(VpaID{}, nil, anyTime)
 	vpa.ContainersInitialAggregateState = containersInitialAggregateState
 
 	containerNameToAggregateStateMap := ContainerNameToAggregateStateMap{}
 	vpa.MergeCheckpointedState(containerNameToAggregateStateMap)
+	vpa.updateLastSampleStart(containerNameToAggregateStateMap)
 
 	assert.Contains(t, containerNameToAggregateStateMap, "test")
+	assert.Equal(t, vpa.LastSampleStart, testTimestamp.Add(time.Hour*-24))
+
+	containerNameToAggregateStateMap["test2"] = NewAggregateContainerState()
+	containerNameToAggregateStateMap["test2"].addCPUSample(&ContainerUsageSampleWithKey{
+		Container: ContainerID{PodID: PodID{}, ContainerName: "test2"},
+		ContainerUsageSample: ContainerUsageSample{
+			MeasureStart: testTimestamp,
+			Usage:        CPUAmountFromCores(2),
+			Request:      testRequest[ResourceCPU],
+			Resource:     ResourceCPU,
+		},
+	})
+	containerNameToAggregateStateMap["test2"].addMemorySample(&ContainerUsageSampleWithKey{
+		Container: ContainerID{PodID: PodID{}, ContainerName: "test2"},
+		ContainerUsageSample: ContainerUsageSample{
+			MeasureStart: testTimestamp,
+			Usage:        MemoryAmountFromBytes(9e9),
+			Request:      testRequest[ResourceMemory],
+			Resource:     ResourceMemory,
+		},
+	})
+	vpa.MergeCheckpointedState(containerNameToAggregateStateMap)
+	vpa.updateLastSampleStart(containerNameToAggregateStateMap)
+
+	assert.Contains(t, containerNameToAggregateStateMap, "test")
+	assert.Contains(t, containerNameToAggregateStateMap, "test2")
+	assert.Equal(t, vpa.LastSampleStart, testTimestamp)
+
+	containerNameToAggregateStateMap["test"] = NewAggregateContainerState()
+	containerNameToAggregateStateMap["test"].addCPUSample(&ContainerUsageSampleWithKey{
+		Container: ContainerID{PodID: PodID{}, ContainerName: "test"},
+		ContainerUsageSample: ContainerUsageSample{
+			MeasureStart: testTimestamp.Add(time.Hour * 24),
+			Usage:        CPUAmountFromCores(2),
+			Request:      testRequest[ResourceCPU],
+			Resource:     ResourceCPU,
+		},
+	})
+	containerNameToAggregateStateMap["test"].addMemorySample(&ContainerUsageSampleWithKey{
+		Container: ContainerID{PodID: PodID{}, ContainerName: "test"},
+		ContainerUsageSample: ContainerUsageSample{
+			MeasureStart: testTimestamp.Add(time.Hour * 24),
+			Usage:        MemoryAmountFromBytes(9e9),
+			Request:      testRequest[ResourceMemory],
+			Resource:     ResourceMemory,
+		},
+	})
+	vpa.MergeCheckpointedState(containerNameToAggregateStateMap)
+	vpa.updateLastSampleStart(containerNameToAggregateStateMap)
+
+	assert.Contains(t, containerNameToAggregateStateMap, "test")
+	assert.Contains(t, containerNameToAggregateStateMap, "test2")
+	assert.Equal(t, vpa.LastSampleStart, testTimestamp.Add(time.Hour*24))
 }
 
 func TestUpdateConditions(t *testing.T) {

@@ -21,6 +21,7 @@ import (
 	"flag"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	vpa_clientset "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
@@ -37,10 +38,14 @@ import (
 // AggregateContainerStateGCInterval defines how often expired AggregateContainerStates are garbage collected.
 const AggregateContainerStateGCInterval = 1 * time.Hour
 
+// VPAGCInterval defines how often expired VPA objects are garbage collected.
+const VPAGCInterval = 1 * time.Hour
+
 var (
-	checkpointsWriteTimeout = flag.Duration("checkpoints-timeout", time.Minute, `Timeout for writing checkpoints since the start of the recommender's main loop`)
-	minCheckpointsPerRun    = flag.Int("min-checkpoints", 10, "Minimum number of checkpoints to write per recommender's main loop")
-	memorySaver             = flag.Bool("memory-saver", false, `If true, only track pods which have an associated VPA`)
+	checkpointsWriteTimeout        = flag.Duration("checkpoints-timeout", time.Minute, `Timeout for writing checkpoints since the start of the recommender's main loop`)
+	VPAMissingContainerMaxDuration = flag.Duration("vpa-missing-container-max-duration", time.Hour*24*12, `Max duration to allow missing containers on a VPA object`)
+	minCheckpointsPerRun           = flag.Int("min-checkpoints", 10, "Minimum number of checkpoints to write per recommender's main loop")
+	memorySaver                    = flag.Bool("memory-saver", false, `If true, only track pods which have an associated VPA`)
 )
 
 // Recommender recommend resources for certain containers, based on utilization periodically got from metrics api.
@@ -71,6 +76,7 @@ type recommender struct {
 	podResourceRecommender        logic.PodResourceRecommender
 	useCheckpoints                bool
 	lastAggregateContainerStateGC time.Time
+	lastVPAGC                     time.Time
 }
 
 func (r *recommender) GetClusterState() *model.ClusterState {
@@ -170,6 +176,26 @@ func (r *recommender) GarbageCollect() {
 	if gcTime.Sub(r.lastAggregateContainerStateGC) > AggregateContainerStateGCInterval {
 		r.clusterState.GarbageCollectAggregateCollectionStates(gcTime)
 		r.lastAggregateContainerStateGC = gcTime
+	}
+	if gcTime.Sub(r.lastVPAGC) > VPAGCInterval {
+		r.GarbageCollectVPA(gcTime)
+		r.lastVPAGC = gcTime
+	}
+}
+
+func (r *recommender) GarbageCollectVPA(now time.Time) {
+	klog.V(3).Info("Starting garbage collection of VPA objects")
+
+	for _, vpa := range r.clusterState.Vpas {
+		// We should GC VPA object if it is inactive for a long time
+		if now.Sub(vpa.LastSampleStart) >= *VPAMissingContainerMaxDuration {
+			err := r.vpaClient.VerticalPodAutoscalers(vpa.ID.Namespace).Delete(context.TODO(), vpa.ID.VpaName, metav1.DeleteOptions{})
+			if err == nil {
+				klog.V(3).Infof("Orphaned VPA cleanup - deleting %v/%v.", vpa.ID.Namespace, vpa.ID.VpaName)
+			} else {
+				klog.Errorf("Cannot delete VPA %v/%v. Reason: %+v", vpa.ID.Namespace, vpa.ID.VpaName, err)
+			}
+		}
 	}
 }
 
