@@ -217,6 +217,12 @@ func (a *AggregateContainerState) addCPUSample(sample *ContainerUsageSampleWithK
 	// which helps react quickly to CPU starvation.
 	a.AggregateCPUUsage.AddSample(
 		fmt.Sprintf("%#v", sample.Container), cpuUsageCores, math.Max(cpuRequestCores, minSampleWeight), sample.MeasureStart)
+}
+
+func (a *AggregateContainerState) addMemorySample(sample *ContainerUsageSampleWithKey) {
+	a.AggregateMemoryPeaks.AddSample(fmt.Sprintf("%#v", sample.Container), BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
+	// Rely on aggregate_container_state.addMemorySample to record FirstSampleStart, LastSampleStart and TotalSamplesCount to account for OOM metrics
+	// If pods OOMKilled too soon, there wouldn't be normal CPUSample or memorySample which leads to 0 TotalSamplesCount.
 	if sample.MeasureStart.After(a.LastSampleStart) {
 		a.LastSampleStart = sample.MeasureStart
 	}
@@ -224,23 +230,6 @@ func (a *AggregateContainerState) addCPUSample(sample *ContainerUsageSampleWithK
 		a.FirstSampleStart = sample.MeasureStart
 	}
 	a.TotalSamplesCount++
-}
-
-func (a *AggregateContainerState) addMemorySample(sample *ContainerUsageSampleWithKey) {
-	a.AggregateMemoryPeaks.AddSample(fmt.Sprintf("%#v", sample.Container), BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
-	// In case of OOM handling, total samples count and sample start will be always zero
-	// However, it does have valid memory samples
-	// Risk:
-	// 1. Last and first sample start time are inaccurate if the first sample is OOM sample
-	if a.LastSampleStart.IsZero() {
-		a.LastSampleStart = time.Now()
-	}
-	if a.FirstSampleStart.IsZero() {
-		a.FirstSampleStart = time.Now()
-	}
-	if a.TotalSamplesCount == 0 {
-		a.TotalSamplesCount = 1
-	}
 }
 
 // SaveToCheckpoint serializes AggregateContainerState as VerticalPodAutoscalerCheckpointStatus.
