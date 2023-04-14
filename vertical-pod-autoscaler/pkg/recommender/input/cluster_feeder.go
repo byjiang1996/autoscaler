@@ -308,6 +308,9 @@ func (feeder *clusterStateFeeder) setVpaCheckpoint(checkpoint *vpa_types.Vertica
 		return fmt.Errorf("cannot load checkpoint for VPA %+v. Reason: %v", vpa.ID, err)
 	}
 	vpa.ContainersInitialAggregateState[checkpoint.Spec.ContainerName] = cs
+	if cs.LastSampleStart.After(vpa.LastCheckpointedSampleStart) {
+		vpa.LastCheckpointedSampleStart = cs.LastSampleStart
+	}
 	return nil
 }
 

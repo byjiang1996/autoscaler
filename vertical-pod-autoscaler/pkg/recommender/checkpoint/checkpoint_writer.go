@@ -75,7 +75,7 @@ func getVpasToCheckpoint(clusterVpas map[model.VpaID]*model.Vpa) []*model.Vpa {
 		vpas = append(vpas, vpa)
 	}
 	sort.Slice(vpas, func(i, j int) bool {
-		return vpas[i].CheckpointWritten.Before(vpas[j].CheckpointWritten)
+		return vpas[i].CheckpointProcessed.Before(vpas[j].CheckpointProcessed)
 	})
 	return vpas
 }
@@ -102,10 +102,8 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 				klog.Errorf("Cannot serialize checkpoint for vpa %v container %v. Reason: %+v", vpa.ID.VpaName, container, err)
 				continue
 			}
-			// Check if VPA checkpoint object is written before last sample time + *maxCheckpointOverwriteTime
-			// It is possible that LastSampleStart obtained from current iteration is already less than now.
-			// Apply *maxCheckpointOverwriteTime for safety check
-			if containerCheckpoint.LastSampleStart.Add(*maxCheckpointOverwriteTime).After(vpa.CheckpointWritten) {
+			// Prevent writing the same old checkpoint again and again.
+			if containerCheckpoint.LastSampleStart.After(vpa.LastCheckpointedSampleStart) {
 				checkpointName := fmt.Sprintf("%s-%s", vpa.ID.VpaName, container)
 				vpaCheckpoint := vpa_types.VerticalPodAutoscalerCheckpoint{
 					ObjectMeta: metav1.ObjectMeta{Name: checkpointName},
@@ -122,9 +120,10 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 				} else {
 					klog.V(3).Infof("Saved VPA %s/%s checkpoint for %s",
 						vpa.ID.Namespace, vpaCheckpoint.Spec.VPAObjectName, vpaCheckpoint.Spec.ContainerName)
-					vpa.CheckpointWritten = now
+					vpa.LastCheckpointedSampleStart = containerCheckpoint.LastSampleStart.Time
 				}
 			}
+			vpa.CheckpointProcessed = now
 			minCheckpoints--
 		}
 	}

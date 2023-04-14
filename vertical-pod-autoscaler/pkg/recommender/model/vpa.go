@@ -104,8 +104,10 @@ type Vpa struct {
 	Created time.Time
 	// LastSampleStart denotes timestamp of the last sample time for the VPA object
 	LastSampleStart time.Time
-	// CheckpointWritten indicates when last checkpoint for the VPA object was stored.
-	CheckpointWritten time.Time
+	// LastCheckpointedSampleStart denotes timestamp of the last sample time that is checkpointed.
+	LastCheckpointedSampleStart time.Time
+	// CheckpointProcessed indicates when last checkpoint for the VPA object was processed: either stored or skipped.
+	CheckpointProcessed time.Time
 	// IsV1Beta1API is set to true if VPA object has labelSelector defined as in v1beta1 api.
 	IsV1Beta1API bool
 	// TargetRef points to the controller managing the set of pods.
