@@ -64,6 +64,14 @@ var (
 	functionLatency = metrics.CreateExecutionTimeMetric(metricsNamespace,
 		"Time spent in various parts of VPA Recommender main loop.")
 
+	containerUsageSamplesCount = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricsNamespace,
+			Name:      "container_usage_samples_count",
+			Help:      "Number of valid container usage samples emitted by k8s metrics server",
+		},
+	)
+
 	aggregateContainerStatesCount = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Namespace: metricsNamespace,
@@ -88,7 +96,7 @@ type ObjectCounter struct {
 
 // Register initializes all metrics for VPA Recommender
 func Register() {
-	prometheus.MustRegister(vpaObjectCount, recommendationLatency, functionLatency, aggregateContainerStatesCount)
+	prometheus.MustRegister(vpaObjectCount, recommendationLatency, functionLatency, containerUsageSamplesCount, aggregateContainerStatesCount)
 }
 
 // NewExecutionTimer provides a timer for Recommender's RunOnce execution
@@ -99,6 +107,11 @@ func NewExecutionTimer() *metrics.ExecutionTimer {
 // ObserveRecommendationLatency observes the time it took for the first recommendation to appear
 func ObserveRecommendationLatency(created time.Time) {
 	recommendationLatency.Observe(time.Now().Sub(created).Seconds())
+}
+
+// RecordContainerUsageSamplesCount records the number of valid container usage samples emitted by k8s metrics server
+func RecordContainerUsageSamplesCount(sampleCount int) {
+	containerUsageSamplesCount.Set(float64(sampleCount))
 }
 
 // RecordAggregateContainerStatesCount records the number of containers being tracked by the recommender

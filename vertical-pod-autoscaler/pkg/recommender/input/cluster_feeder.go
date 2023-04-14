@@ -468,6 +468,8 @@ func (feeder *clusterStateFeeder) LoadRealTimeMetrics() {
 		}
 	}
 	klog.V(3).Infof("ClusterSpec fed with #%v ContainerUsageSamples for #%v containers. Dropped #%v samples.", sampleCount, len(containersMetrics), droppedSampleCount)
+	metrics_recommender.RecordContainerUsageSamplesCount(sampleCount)
+
 Loop:
 	for {
 		select {
