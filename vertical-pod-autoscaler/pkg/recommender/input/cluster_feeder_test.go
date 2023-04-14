@@ -18,6 +18,7 @@ package input
 
 import (
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -251,6 +252,42 @@ func TestLoadPods(t *testing.T) {
 
 		})
 	}
+}
+
+func TestLoadVPAsWithVPANameRegex(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	vpa_good1 := test.VerticalPodAutoscaler().WithName("prefix1-abc-suffix1").WithContainer("container").WithNamespace("testNamespace").Get()
+	vpa_good2 := test.VerticalPodAutoscaler().WithName("prefix2-abc-suffix2").WithContainer("container").WithNamespace("testNamespace").Get()
+	vpa_good3 := test.VerticalPodAutoscaler().WithName("prefix3-abc-suffix3").WithContainer("container").WithNamespace("testNamespace").Get()
+	vpa_bad1 := test.VerticalPodAutoscaler().WithName("prefix-tews-suffix").WithContainer("container").WithNamespace("testNamespace").Get()
+	vpa_bad2 := test.VerticalPodAutoscaler().WithName("prefix-be-suffix").WithContainer("container").WithNamespace("testNamespace").Get()
+
+	vpaLister := &test.VerticalPodAutoscalerListerMock{}
+	vpaLister.On("List").Return([]*vpa_types.VerticalPodAutoscaler{vpa_bad1, vpa_bad2, vpa_good1, vpa_good2, vpa_good3}, nil)
+
+	targetSelectorFetcher := target_mock.NewMockVpaTargetSelectorFetcher(ctrl)
+
+	clusterState := model.NewClusterState()
+
+	clusterStateFeeder := clusterStateFeeder{
+		vpaLister:       vpaLister,
+		clusterState:    clusterState,
+		selectorFetcher: targetSelectorFetcher,
+		controllerFetcher: &fakeControllerFetcher{
+			key: nil,
+			err: nil,
+		},
+		vpaObjectNameFilterRegex: regexp.MustCompile(".*-abc-.*"),
+	}
+
+	targetSelectorFetcher.EXPECT().Fetch(vpa_good1).Return(parseLabelSelector("app = test"), nil)
+	targetSelectorFetcher.EXPECT().Fetch(vpa_good2).Return(parseLabelSelector("app = test"), nil)
+	targetSelectorFetcher.EXPECT().Fetch(vpa_good3).Return(parseLabelSelector("app = test"), nil)
+
+	clusterStateFeeder.LoadVPAs()
+	assert.Equal(t, len(clusterState.ObservedVpas), 3)
 }
 
 type testSpecClient struct {
