@@ -101,6 +101,7 @@ type ClusterStateFeederFactory struct {
 	MemorySaveMode           bool
 	ControllerFetcher        controllerfetcher.ControllerFetcher
 	vpaObjectNameFilterRegex *regexp.Regexp
+	namespace                string
 }
 
 // Make creates new ClusterStateFeeder with internal data providers, based on kube client.
@@ -117,6 +118,7 @@ func (m ClusterStateFeederFactory) Make() *clusterStateFeeder {
 		memorySaveMode:           m.MemorySaveMode,
 		controllerFetcher:        m.ControllerFetcher,
 		vpaObjectNameFilterRegex: m.vpaObjectNameFilterRegex,
+		namespace:                m.namespace,
 	}
 }
 
@@ -140,6 +142,7 @@ func NewClusterStateFeeder(config *rest.Config, clusterState *model.ClusterState
 		MemorySaveMode:           memorySave,
 		ControllerFetcher:        controllerFetcher,
 		vpaObjectNameFilterRegex: regexp.MustCompile(*vpaObjectNameFilterRegexPattern),
+		namespace:                namespace,
 	}.Make()
 }
 
@@ -281,6 +284,7 @@ type clusterStateFeeder struct {
 	memorySaveMode           bool
 	controllerFetcher        controllerfetcher.ControllerFetcher
 	vpaObjectNameFilterRegex *regexp.Regexp
+	namespace                string
 }
 
 func (feeder *clusterStateFeeder) InitFromHistoryProvider(historyProvider history.HistoryProvider) {
@@ -364,6 +368,11 @@ func (feeder *clusterStateFeeder) GarbageCollectCheckpoints() {
 	klog.V(3).Info("Starting garbage collection of checkpoints")
 	feeder.LoadVPAs()
 
+	if feeder.namespace != apiv1.NamespaceAll {
+		feeder.GarbageCollectCheckpointsForNamespace(feeder.namespace)
+		return
+	}
+
 	namspaceList, err := feeder.coreClient.Namespaces().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		klog.Errorf("Cannot list namespaces. Reason: %+v", err)
@@ -372,24 +381,29 @@ func (feeder *clusterStateFeeder) GarbageCollectCheckpoints() {
 
 	for _, namespaceItem := range namspaceList.Items {
 		namespace := namespaceItem.Name
-		checkpointList, err := feeder.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(namespace).List(context.TODO(), metav1.ListOptions{})
-		if err != nil {
-			klog.Errorf("Cannot list VPA checkpoints from namespace %v. Reason: %+v", namespace, err)
+		feeder.GarbageCollectCheckpointsForNamespace(namespace)
+	}
+}
+
+func (feeder *clusterStateFeeder) GarbageCollectCheckpointsForNamespace(namespace string) {
+	klog.V(3).Infof("Starting garbage collection of checkpoints for namespace %v", namespace)
+	checkpointList, err := feeder.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(namespace).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		klog.Errorf("Cannot list VPA checkpoints from namespace %v. Reason: %+v", namespace, err)
+	}
+	for _, checkpoint := range checkpointList.Items {
+		// This checkpoint should not be selected
+		if feeder.vpaObjectNameFilterRegex != nil && !(*feeder.vpaObjectNameFilterRegex).MatchString(checkpoint.Spec.VPAObjectName) {
+			continue
 		}
-		for _, checkpoint := range checkpointList.Items {
-			// This checkpoint should not be selected
-			if feeder.vpaObjectNameFilterRegex != nil && !(*feeder.vpaObjectNameFilterRegex).MatchString(checkpoint.Spec.VPAObjectName) {
-				continue
-			}
-			vpaID := model.VpaID{Namespace: checkpoint.Namespace, VpaName: checkpoint.Spec.VPAObjectName}
-			_, exists := feeder.clusterState.Vpas[vpaID]
-			if !exists {
-				err = feeder.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(namespace).Delete(context.TODO(), checkpoint.Name, metav1.DeleteOptions{})
-				if err == nil {
-					klog.V(3).Infof("Orphaned VPA checkpoint cleanup - deleting %v/%v.", namespace, checkpoint.Name)
-				} else {
-					klog.Errorf("Cannot delete VPA checkpoint %v/%v. Reason: %+v", namespace, checkpoint.Name, err)
-				}
+		vpaID := model.VpaID{Namespace: checkpoint.Namespace, VpaName: checkpoint.Spec.VPAObjectName}
+		_, exists := feeder.clusterState.Vpas[vpaID]
+		if !exists {
+			err = feeder.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(namespace).Delete(context.TODO(), checkpoint.Name, metav1.DeleteOptions{})
+			if err == nil {
+				klog.V(3).Infof("Orphaned VPA checkpoint cleanup - deleting %v/%v.", namespace, checkpoint.Name)
+			} else {
+				klog.Errorf("Cannot delete VPA checkpoint %v/%v. Reason: %+v", namespace, checkpoint.Name, err)
 			}
 		}
 	}
