@@ -33,7 +33,8 @@ import (
 )
 
 var (
-	maxCheckpointOverwriteTime = flag.Duration("max-checkpoint-overwrite-time", 10*time.Minute, `Max allowed time to overwrite checkpoint with no change`)
+	maxCheckpointOverwriteTime          = flag.Duration("max-checkpoint-overwrite-time", 10*time.Minute, `Max allowed time to overwrite checkpoint with no change`)
+	discardCurrentMemoryPeakForSnapshot = flag.Bool("discard-current-memory-peak-for-snapshot", true, `Discard current memory peak for VPA checkpoint`)
 )
 
 // CheckpointWriter persistently stores aggregated historical usage of containers
@@ -139,20 +140,23 @@ func buildAggregateContainerStateMap(vpa *model.Vpa, cluster *model.ClusterState
 	// checkpoint to avoid having multiple peaks in the same interval after the state is restored from
 	// the checkpoint. Therefore we are extracting the current peak from all containers.
 	// TODO: Avoid the nested loop over all containers for each VPA.
-	for _, pod := range cluster.Pods {
-		for containerName, container := range pod.Containers {
-			aggregateKey := cluster.MakeAggregateStateKey(pod, containerName)
-			if vpa.UsesAggregation(aggregateKey) {
-				if aggregateContainerState, exists := aggregateContainerStateMap[containerName]; exists {
-					containerID := model.ContainerID{
-						PodID:         pod.ID,
-						ContainerName: containerName,
+	if *discardCurrentMemoryPeakForSnapshot {
+		for _, pod := range cluster.Pods {
+			for containerName, container := range pod.Containers {
+				aggregateKey := cluster.MakeAggregateStateKey(pod, containerName)
+				if vpa.UsesAggregation(aggregateKey) {
+					if aggregateContainerState, exists := aggregateContainerStateMap[containerName]; exists {
+						containerID := model.ContainerID{
+							PodID:         pod.ID,
+							ContainerName: containerName,
+						}
+						subtractCurrentContainerMemoryPeak(&containerID, aggregateContainerState, container, now)
 					}
-					subtractCurrentContainerMemoryPeak(&containerID, aggregateContainerState, container, now)
 				}
 			}
 		}
 	}
+
 	return aggregateContainerStateMap
 }
 
