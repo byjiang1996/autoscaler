@@ -94,6 +94,7 @@ type ClusterStateFeederFactory struct {
 	KubeClient               kube_client.Interface
 	MetricsClient            metrics.MetricsClient
 	VpaCheckpointClient      vpa_api.VerticalPodAutoscalerCheckpointsGetter
+	VpaCheckpointLister      vpa_lister.VerticalPodAutoscalerCheckpointLister
 	VpaLister                vpa_lister.VerticalPodAutoscalerLister
 	PodLister                v1lister.PodLister
 	OOMObserver              oom.Observer
@@ -111,6 +112,7 @@ func (m ClusterStateFeederFactory) Make() *clusterStateFeeder {
 		metricsClient:            m.MetricsClient,
 		oomChan:                  m.OOMObserver.GetObservedOomsChannel(),
 		vpaCheckpointClient:      m.VpaCheckpointClient,
+		vpaCheckpointLister:      m.VpaCheckpointLister,
 		vpaLister:                m.VpaLister,
 		clusterState:             m.ClusterState,
 		specClient:               spec.NewSpecClient(m.PodLister),
@@ -136,6 +138,7 @@ func NewClusterStateFeeder(config *rest.Config, clusterState *model.ClusterState
 		KubeClient:               kubeClient,
 		MetricsClient:            newMetricsClient(config, namespace, podLabelSelector),
 		VpaCheckpointClient:      vpa_clientset.NewForConfigOrDie(config).AutoscalingV1(),
+		VpaCheckpointLister:      vpa_api_util.NewVpaCheckpointsLister(vpa_clientset.NewForConfigOrDie(config), make(chan struct{}), namespace),
 		VpaLister:                vpa_api_util.NewVpasLister(vpa_clientset.NewForConfigOrDie(config), make(chan struct{}), namespace),
 		ClusterState:             clusterState,
 		SelectorFetcher:          target.NewVpaTargetSelectorFetcher(config, kubeClient, factory),
@@ -278,6 +281,7 @@ type clusterStateFeeder struct {
 	metricsClient            metrics.MetricsClient
 	oomChan                  <-chan oom.OomInfo
 	vpaCheckpointClient      vpa_api.VerticalPodAutoscalerCheckpointsGetter
+	vpaCheckpointLister      vpa_lister.VerticalPodAutoscalerCheckpointLister
 	vpaLister                vpa_lister.VerticalPodAutoscalerLister
 	clusterState             *model.ClusterState
 	selectorFetcher          target.VpaTargetSelectorFetcher
@@ -338,29 +342,23 @@ func (feeder *clusterStateFeeder) InitFromCheckpoints() {
 	klog.V(3).Info("Initializing VPA from checkpoints")
 	feeder.LoadVPAs()
 
-	namespaces := make(map[string]bool)
-	for _, v := range feeder.clusterState.Vpas {
-		namespaces[v.ID.Namespace] = true
+	klog.V(3).Infof("Fetching checkpoints from namespace %s", feeder.namespace)
+
+	checkpointList, err := feeder.vpaCheckpointLister.List(labels.Everything())
+	if err != nil {
+		klog.Errorf("Cannot list VPA checkpoints from namespace %v. Reason: %+v", feeder.namespace, err)
 	}
-
-	for namespace := range namespaces {
-		klog.V(3).Infof("Fetching checkpoints from namespace %s", namespace)
-		checkpointList, err := feeder.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(namespace).List(context.TODO(), metav1.ListOptions{})
+	for _, checkpoint := range checkpointList {
+		// This checkpoint should not be selected
+		if feeder.vpaObjectNameFilterRegex != nil && !(*feeder.vpaObjectNameFilterRegex).MatchString(checkpoint.Spec.VPAObjectName) {
+			continue
+		}
+		klog.V(3).Infof("Loading VPA %s/%s checkpoint for %s", checkpoint.ObjectMeta.Namespace, checkpoint.Spec.VPAObjectName, checkpoint.Spec.ContainerName)
+		err = feeder.setVpaCheckpoint(checkpoint)
 		if err != nil {
-			klog.Errorf("Cannot list VPA checkpoints from namespace %v. Reason: %+v", namespace, err)
+			klog.Errorf("Error while loading checkpoint. Reason: %+v", err)
 		}
-		for _, checkpoint := range checkpointList.Items {
-			// This checkpoint should not be selected
-			if feeder.vpaObjectNameFilterRegex != nil && !(*feeder.vpaObjectNameFilterRegex).MatchString(checkpoint.Spec.VPAObjectName) {
-				continue
-			}
-			klog.V(3).Infof("Loading VPA %s/%s checkpoint for %s", checkpoint.ObjectMeta.Namespace, checkpoint.Spec.VPAObjectName, checkpoint.Spec.ContainerName)
-			err = feeder.setVpaCheckpoint(&checkpoint)
-			if err != nil {
-				klog.Errorf("Error while loading checkpoint. Reason: %+v", err)
-			}
 
-		}
 	}
 }
 
@@ -368,30 +366,11 @@ func (feeder *clusterStateFeeder) GarbageCollectCheckpoints() {
 	klog.V(3).Info("Starting garbage collection of checkpoints")
 	feeder.LoadVPAs()
 
-	if feeder.namespace != apiv1.NamespaceAll {
-		feeder.GarbageCollectCheckpointsForNamespace(feeder.namespace)
-		return
-	}
-
-	namspaceList, err := feeder.coreClient.Namespaces().List(context.TODO(), metav1.ListOptions{})
+	checkpointList, err := feeder.vpaCheckpointLister.List(labels.Everything())
 	if err != nil {
-		klog.Errorf("Cannot list namespaces. Reason: %+v", err)
-		return
+		klog.Errorf("Cannot list VPA checkpoints from namespace %v. Reason: %+v", feeder.namespace, err)
 	}
-
-	for _, namespaceItem := range namspaceList.Items {
-		namespace := namespaceItem.Name
-		feeder.GarbageCollectCheckpointsForNamespace(namespace)
-	}
-}
-
-func (feeder *clusterStateFeeder) GarbageCollectCheckpointsForNamespace(namespace string) {
-	klog.V(3).Infof("Starting garbage collection of checkpoints for namespace %v", namespace)
-	checkpointList, err := feeder.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(namespace).List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		klog.Errorf("Cannot list VPA checkpoints from namespace %v. Reason: %+v", namespace, err)
-	}
-	for _, checkpoint := range checkpointList.Items {
+	for _, checkpoint := range checkpointList {
 		// This checkpoint should not be selected
 		if feeder.vpaObjectNameFilterRegex != nil && !(*feeder.vpaObjectNameFilterRegex).MatchString(checkpoint.Spec.VPAObjectName) {
 			continue
@@ -399,11 +378,11 @@ func (feeder *clusterStateFeeder) GarbageCollectCheckpointsForNamespace(namespac
 		vpaID := model.VpaID{Namespace: checkpoint.Namespace, VpaName: checkpoint.Spec.VPAObjectName}
 		_, exists := feeder.clusterState.Vpas[vpaID]
 		if !exists {
-			err = feeder.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(namespace).Delete(context.TODO(), checkpoint.Name, metav1.DeleteOptions{})
+			err = feeder.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(feeder.namespace).Delete(context.TODO(), checkpoint.Name, metav1.DeleteOptions{})
 			if err == nil {
-				klog.V(3).Infof("Orphaned VPA checkpoint cleanup - deleting %v/%v.", namespace, checkpoint.Name)
+				klog.V(3).Infof("Orphaned VPA checkpoint cleanup - deleting %v/%v.", feeder.namespace, checkpoint.Name)
 			} else {
-				klog.Errorf("Cannot delete VPA checkpoint %v/%v. Reason: %+v", namespace, checkpoint.Name, err)
+				klog.Errorf("Cannot delete VPA checkpoint %v/%v. Reason: %+v", feeder.namespace, checkpoint.Name, err)
 			}
 		}
 	}
