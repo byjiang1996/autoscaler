@@ -204,7 +204,9 @@ func (container *ContainerState) addMemorySample(sample *ContainerUsageSampleWit
 // RecordOOM adds info regarding OOM event in the model as an artificial memory sample.
 func (container *ContainerState) RecordOOM(timestamp time.Time, containerID ContainerID, requestedMemory ResourceAmount) error {
 	// Discard old OOM
-	if timestamp.Before(container.WindowEnd.Add(-1 * GetAggregationsConfig().MemoryAggregationInterval)) {
+	// In some system, MemoryAggregationInterval is configured as a very small value so we cannot really tell from MemoryAggregationInterval
+	// set it to 10min as a workaround
+	if timestamp.Before(container.WindowEnd.Add(-10 * time.Minute)) {
 		return fmt.Errorf("OOM event will be discarded - it is too old (%v)", timestamp)
 	}
 	// Get max of the request and the recent usage-based memory peak.
