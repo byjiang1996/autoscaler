@@ -43,14 +43,15 @@ func NewAtleastxcontainerDecayingHistogram(minAllowedContainerCnt int, options H
 func (h *atleastxcontainerDecayingHistogram) Percentile(percentile float64) float64 {
 	h.updateAndShrinkMap()
 
+	value := h.decayingHistogram.Percentile(percentile)
 	if h.isNewHistogram {
-		return h.resourceForNewHistogram
+		return math.Max(value, h.resourceForNewHistogram)
 	}
 
 	// if h.enableForOldHistogram {
 	// 	return math.Max(h.decayingHistogram.Percentile(percentile), h.percentileOverLastXContainers(percentile))
 	// }
-	return h.decayingHistogram.Percentile(percentile)
+	return value
 }
 
 func (h *atleastxcontainerDecayingHistogram) AddSample(containerId string, value float64, weight float64, time time.Time) {
