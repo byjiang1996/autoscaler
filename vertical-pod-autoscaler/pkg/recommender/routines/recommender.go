@@ -19,6 +19,7 @@ package routines
 import (
 	"context"
 	"flag"
+	"sort"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -149,6 +150,9 @@ func getCappedRecommendation(vpaID model.VpaID, resources logic.RecommendedPodRe
 			UncappedTarget: model.ResourcesAsResourceList(res.Target),
 		})
 	}
+	sort.Slice(containerResources, func(i, j int) bool {
+		return containerResources[i].ContainerName < containerResources[j].ContainerName
+	})
 	recommendation := &vpa_types.RecommendedPodResources{containerResources}
 	cappedRecommendation, err := vpa_utils.ApplyVPAPolicy(recommendation, policy)
 	if err != nil {
