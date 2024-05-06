@@ -24,7 +24,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingapi "k8s.io/api/autoscaling/v1"
 	batchv1 "k8s.io/api/batch/v1"
-	batchv1beta1 "k8s.io/api/batch/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -46,7 +45,6 @@ import (
 type wellKnownController string
 
 const (
-	cronJob               wellKnownController = "CronJob"
 	daemonSet             wellKnownController = "DaemonSet"
 	deployment            wellKnownController = "Deployment"
 	node                  wellKnownController = "Node"
@@ -129,7 +127,6 @@ func NewControllerFetcher(config *rest.Config, kubeClient kube_client.Interface,
 		statefulSet:           factory.Apps().V1().StatefulSets().Informer(),
 		replicationController: factory.Core().V1().ReplicationControllers().Informer(),
 		job:                   factory.Batch().V1().Jobs().Informer(),
-		cronJob:               factory.Batch().V1beta1().CronJobs().Informer(),
 	}
 
 	for kind, informer := range informersMap {
@@ -207,12 +204,6 @@ func getParentOfWellKnownController(informer cache.SharedIndexInformer, controll
 		return getOwnerController(apiObj.OwnerReferences, namespace), nil
 	case (*batchv1.Job):
 		apiObj, ok := obj.(*batchv1.Job)
-		if !ok {
-			return nil, fmt.Errorf("Failed to parse %s %s/%s", kind, namespace, name)
-		}
-		return getOwnerController(apiObj.OwnerReferences, namespace), nil
-	case (*batchv1beta1.CronJob):
-		apiObj, ok := obj.(*batchv1beta1.CronJob)
 		if !ok {
 			return nil, fmt.Errorf("Failed to parse %s %s/%s", kind, namespace, name)
 		}
